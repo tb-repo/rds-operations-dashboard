@@ -1,0 +1,94 @@
+{
+  "version": "1.0.0",
+  "description": "RDS Operations Dashboard Configuration",
+  "last_updated": "2025-11-12T18:30:00Z",
+  
+  "deployment": {
+    "environment": "prod",
+    "region": "ap-southeast-1",
+    "management_account_id": "123456789012"
+  },
+  
+  "cross_account": {
+    "external_id": "rds-dashboard-unique-id-12345",
+    "role_name": "RDSDashboardCrossAccountRole",
+    "target_accounts": [
+      {
+        "account_id": "123456789012",
+        "account_name": "Production",
+        "enabled": true
+      },
+      {
+        "account_id": "234567890123",
+        "account_name": "Development",
+        "enabled": true
+      },
+      {
+        "account_id": "345678901234",
+        "account_name": "Staging",
+        "enabled": false
+      }
+    ],
+    "target_regions": [
+      {
+        "region": "ap-southeast-1",
+        "region_name": "Singapore",
+        "enabled": true,
+        "priority": 1
+      },
+      {
+        "region": "eu-west-2",
+        "region_name": "London",
+        "enabled": true,
+        "priority": 2
+      },
+      {
+        "region": "ap-south-1",
+        "region_name": "Mumbai",
+        "enabled": true,
+        "priority": 3
+      },
+      {
+        "region": "us-east-1",
+        "region_name": "N. Virginia",
+        "enabled": true,
+        "priority": 4
+      }
+    ]
+  },
+  
+  "discovery": {
+    "schedule": "rate(1 hour)",
+    "timeout_minutes": 15,
+    "memory_mb": 512,
+    "parallel_workers": 4,
+    "retry_attempts": 3
+  },
+  
+  "monitoring": {
+    "cloudwatch_namespace": "RDSDashboard",
+    "sns_email": "dba-team@company.com",
+    "alert_thresholds": {
+      "new_instances_threshold": 5,
+      "deleted_instances_threshold": 3,
+      "error_rate_threshold": 0.1
+    }
+  },
+  
+  "caching": {
+    "metrics_ttl_seconds": 300,
+    "cache_hit_threshold": 0.7
+  },
+  
+  "logging": {
+    "log_level": "INFO",
+    "log_retention_days": 7
+  },
+  
+  "tags": {
+    "Project": "RDSDashboard",
+    "ManagedBy": "CDK",
+    "CostCenter": "DBA-Team",
+    "Owner": "DBA-Team"
+  }
+}

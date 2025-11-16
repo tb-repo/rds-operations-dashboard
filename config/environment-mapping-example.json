@@ -1,0 +1,89 @@
+{
+  "_comment": "Environment Classification Configuration",
+  "_description": "Use this file when AWS tagging is not possible. Supports multiple classification methods.",
+  
+  "default_environment": "non-production",
+  
+  "instance_mappings": {
+    "_comment": "Manual mapping of specific instance IDs to environments",
+    "prod-postgres-main": "production",
+    "prod-mysql-primary": "production",
+    "prod-oracle-db01": "production",
+    "dev-postgres-01": "development",
+    "dev-mysql-test": "development",
+    "test-db-01": "test",
+    "test-db-02": "test",
+    "poc-experiment-db": "poc",
+    "sandbox-playground": "sandbox"
+  },
+  
+  "account_mappings": {
+    "_comment": "Map entire AWS accounts to environments",
+    "123456789012": "production",
+    "234567890123": "development",
+    "345678901234": "test",
+    "456789012345": "poc"
+  },
+  
+  "naming_patterns": {
+    "_comment": "Regex patterns to match instance names. Checked in order.",
+    "production": [
+      "^prod-",
+      "^prd-",
+      "^p-",
+      "-prod$",
+      "-prd$",
+      "-production$"
+    ],
+    "development": [
+      "^dev-",
+      "^development-",
+      "-dev$",
+      "-development$"
+    ],
+    "test": [
+      "^test-",
+      "^tst-",
+      "^qa-",
+      "-test$",
+      "-tst$",
+      "-qa$"
+    ],
+    "staging": [
+      "^stg-",
+      "^staging-",
+      "^stage-",
+      "-stg$",
+      "-staging$"
+    ],
+    "poc": [
+      "^poc-",
+      "^demo-",
+      "^exp-",
+      "^experiment-",
+      "-poc$",
+      "-demo$"
+    ],
+    "sandbox": [
+      "^sandbox-",
+      "^sbx-",
+      "-sandbox$",
+      "-sbx$"
+    ]
+  },
+  
+  "classification_priority": [
+    "aws_tags",
+    "manual_mapping",
+    "account_mapping",
+    "naming_pattern",
+    "default"
+  ],
+  
+  "notes": {
+    "priority": "AWS tags are always checked first if present",
+    "fallback": "If no method matches, uses default_environment",
+    "case_insensitive": "All comparisons are case-insensitive",
+    "regex_support": "Naming patterns support regex (use ^ for start, $ for end)"
+  }
+}
