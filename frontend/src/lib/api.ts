@@ -1,13 +1,15 @@
 import axios from 'axios'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
-const API_KEY = import.meta.env.VITE_API_KEY
+// BFF API URL (no API key needed - handled by BFF)
+const API_BASE_URL = import.meta.env.VITE_BFF_API_URL || import.meta.env.VITE_API_BASE_URL
+const API_KEY = import.meta.env.VITE_API_KEY // Only used for direct API access (fallback)
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
-    'x-api-key': API_KEY,
+    // Only add API key if using direct API (not BFF)
+    ...(API_KEY && !import.meta.env.VITE_BFF_API_URL && { 'x-api-key': API_KEY }),
   },
   timeout: 30000,
 })

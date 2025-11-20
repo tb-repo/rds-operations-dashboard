@@ -1,18 +1,16 @@
 import * as cdk from 'aws-cdk-lib';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
-import * as iam from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
 
 export interface ApiStackProps extends cdk.StackProps {
   queryHandlerFunction: lambda.IFunction;
   operationsFunction: lambda.IFunction;
-  // cloudOpsFunction will be added when Task 7 is complete
 }
 
 export class ApiStack extends cdk.Stack {
   public readonly api: apigateway.RestApi;
-  public readonly apiKey: apigateway.ApiKey;
+  public readonly apiKey: apigateway.IApiKey;
 
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
@@ -73,8 +71,7 @@ export class ApiStack extends cdk.Stack {
     this.createHealthEndpoints(props.queryHandlerFunction);
     this.createCostsEndpoints(props.queryHandlerFunction);
     this.createComplianceEndpoints(props.queryHandlerFunction);
-    this.createOperationsEndpoints(props.operationsFunction);
-    // CloudOps endpoints will be added when Task 7 is complete
+    this.createOperationsEndpoints(props.operationsFunction, props.queryHandlerFunction);
 
     // Outputs
     new cdk.CfnOutput(this, 'ApiUrl', {
@@ -325,7 +322,7 @@ export class ApiStack extends cdk.Stack {
     );
   }
 
-  private createOperationsEndpoints(operationsFunction: lambda.IFunction): void {
+  private createOperationsEndpoints(operationsFunction: lambda.IFunction, queryHandler: lambda.IFunction): void {
     // /operations resource
     const operations = this.api.root.addResource('operations');
 

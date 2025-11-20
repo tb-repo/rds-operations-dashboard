@@ -23,6 +23,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import { Tags } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
 export interface DataStackProps extends cdk.StackProps {
@@ -53,16 +54,15 @@ export class DataStack extends cdk.Stack {
         name: 'instance_id',
         type: dynamodb.AttributeType.STRING,
       },
-      billingMode: dynamodb.BillingMode.ON_DEMAND,
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.AWS_MANAGED,
       pointInTimeRecovery: false, // Disabled for cost optimization
       removalPolicy: cdk.RemovalPolicy.RETAIN, // Prevent accidental deletion
-      tags: [
-        { key: 'Project', value: 'RDSDashboard' },
-        { key: 'Environment', value: environment },
-        { key: 'CostCenter', value: 'DBA-Team' },
-      ],
     });
+
+    Tags.of(this.rdsInventoryTable).add('Project', 'RDSDashboard');
+    Tags.of(this.rdsInventoryTable).add('Environment', environment);
+    Tags.of(this.rdsInventoryTable).add('CostCenter', 'DBA-Team');
 
     // GSI: Query instances by account and region
     // Use case: Filter dashboard by account/region
@@ -90,17 +90,16 @@ export class DataStack extends cdk.Stack {
         name: 'cache_key',
         type: dynamodb.AttributeType.STRING,
       },
-      billingMode: dynamodb.BillingMode.ON_DEMAND,
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.AWS_MANAGED,
       timeToLiveAttribute: 'ttl', // Enable TTL for automatic expiration
       pointInTimeRecovery: false,
       removalPolicy: cdk.RemovalPolicy.DESTROY, // Cache data is ephemeral
-      tags: [
-        { key: 'Project', value: 'RDSDashboard' },
-        { key: 'Environment', value: environment },
-        { key: 'CostCenter', value: 'DBA-Team' },
-      ],
     });
+
+    Tags.of(this.metricsCacheTable).add('Project', 'RDSDashboard');
+    Tags.of(this.metricsCacheTable).add('Environment', environment);
+    Tags.of(this.metricsCacheTable).add('CostCenter', 'DBA-Team');
 
     // ========================================
     // DynamoDB Table: health_alerts
@@ -117,16 +116,15 @@ export class DataStack extends cdk.Stack {
         name: 'created_at',
         type: dynamodb.AttributeType.STRING,
       },
-      billingMode: dynamodb.BillingMode.ON_DEMAND,
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.AWS_MANAGED,
       pointInTimeRecovery: false,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
-      tags: [
-        { key: 'Project', value: 'RDSDashboard' },
-        { key: 'Environment', value: environment },
-        { key: 'CostCenter', value: 'DBA-Team' },
-      ],
     });
+
+    Tags.of(this.healthAlertsTable).add('Project', 'RDSDashboard');
+    Tags.of(this.healthAlertsTable).add('Environment', environment);
+    Tags.of(this.healthAlertsTable).add('CostCenter', 'DBA-Team');
 
     // GSI: Query active alerts for a specific instance
     // Use case: Display alerts on instance detail page
@@ -158,16 +156,15 @@ export class DataStack extends cdk.Stack {
         name: 'timestamp',
         type: dynamodb.AttributeType.STRING,
       },
-      billingMode: dynamodb.BillingMode.ON_DEMAND,
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.AWS_MANAGED,
       pointInTimeRecovery: true, // Enable for audit compliance
       removalPolicy: cdk.RemovalPolicy.RETAIN,
-      tags: [
-        { key: 'Project', value: 'RDSDashboard' },
-        { key: 'Environment', value: environment },
-        { key: 'CostCenter', value: 'DBA-Team' },
-      ],
     });
+
+    Tags.of(this.auditLogTable).add('Project', 'RDSDashboard');
+    Tags.of(this.auditLogTable).add('Environment', environment);
+    Tags.of(this.auditLogTable).add('CostCenter', 'DBA-Team');
 
     // GSI: Query operation history for a specific instance
     // Use case: Display operation history on instance detail page
@@ -195,16 +192,15 @@ export class DataStack extends cdk.Stack {
         name: 'snapshot_date',
         type: dynamodb.AttributeType.STRING,
       },
-      billingMode: dynamodb.BillingMode.ON_DEMAND,
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.AWS_MANAGED,
       pointInTimeRecovery: false,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
-      tags: [
-        { key: 'Project', value: 'RDSDashboard' },
-        { key: 'Environment', value: environment },
-        { key: 'CostCenter', value: 'DBA-Team' },
-      ],
     });
+
+    Tags.of(this.costSnapshotsTable).add('Project', 'RDSDashboard');
+    Tags.of(this.costSnapshotsTable).add('Environment', environment);
+    Tags.of(this.costSnapshotsTable).add('CostCenter', 'DBA-Team');
 
     // ========================================
     // S3 Bucket: Data Storage
@@ -213,7 +209,7 @@ export class DataStack extends cdk.Stack {
     // Requirements: REQ-1.3 (data storage), REQ-4.2 (cost reports), REQ-6.4 (compliance reports)
     this.dataBucket = new s3.Bucket(this, 'DataBucket', {
       bucketName: `rds-dashboard-data-${this.account}-${environment}`,
-      versioning: true, // Enable versioning for data protection
+      versioned: true, // Enable versioning for data protection
       encryption: s3.BucketEncryption.S3_MANAGED, // SSE-S3 encryption
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL, // Security best practice
       enforceSSL: true, // Require HTTPS
@@ -255,12 +251,11 @@ export class DataStack extends cdk.Stack {
           expiration: cdk.Duration.days(365), // 1-year retention
         },
       ],
-      tags: [
-        { key: 'Project', value: 'RDSDashboard' },
-        { key: 'Environment', value: environment },
-        { key: 'CostCenter', value: 'DBA-Team' },
-      ],
     });
+
+    Tags.of(this.dataBucket).add('Project', 'RDSDashboard');
+    Tags.of(this.dataBucket).add('Environment', environment);
+    Tags.of(this.dataBucket).add('CostCenter', 'DBA-Team');
 
     // ========================================
     // CloudFormation Outputs

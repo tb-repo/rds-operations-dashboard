@@ -38,6 +38,10 @@ export class ComputeStack extends cdk.Stack {
   public readonly discoveryFunction: lambda.Function;
   public readonly healthMonitorFunction: lambda.Function;
   public readonly costAnalyzerFunction: lambda.Function;
+  public readonly queryHandlerFunction: lambda.Function;
+  public readonly complianceCheckerFunction: lambda.Function;
+  public readonly operationsFunction: lambda.Function;
+  public readonly cloudOpsGeneratorFunction: lambda.Function;
 
   constructor(scope: Construct, id: string, props: ComputeStackProps) {
     super(scope, id, props);
@@ -138,6 +142,107 @@ export class ComputeStack extends cdk.Stack {
     });
 
     // ========================================
+    // Lambda Function: Query Handler
+    // ========================================
+    this.queryHandlerFunction = new lambda.Function(this, 'QueryHandlerFunction', {
+      functionName: `rds-query-handler-${environment}`,
+      runtime: lambda.Runtime.PYTHON_3_11,
+      handler: 'handler.lambda_handler',
+      code: lambda.Code.fromAsset('../lambda/query-handler'),
+      role: lambdaExecutionRole,
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 512,
+      environment: {
+        ENVIRONMENT: environment,
+        INVENTORY_TABLE: rdsInventoryTable.tableName,
+        METRICS_CACHE_TABLE: metricsCacheTable.tableName,
+        HEALTH_ALERTS_TABLE: healthAlertsTable.tableName,
+        AUDIT_LOG_TABLE: auditLogTable.tableName,
+        DATA_BUCKET: dataBucket.bucketName,
+        CLOUDWATCH_NAMESPACE: 'RDSDashboard',
+        LOG_LEVEL: 'INFO'
+      },
+      description: 'Handles API queries for RDS dashboard data',
+    });
+
+    // ========================================
+    // Lambda Function: Compliance Checker
+    // ========================================
+    this.complianceCheckerFunction = new lambda.Function(this, 'ComplianceCheckerFunction', {
+      functionName: `rds-compliance-checker-${environment}`,
+      runtime: lambda.Runtime.PYTHON_3_11,
+      handler: 'handler.lambda_handler',
+      code: lambda.Code.fromAsset('../lambda/compliance-checker'),
+      role: lambdaExecutionRole,
+      timeout: cdk.Duration.minutes(15),
+      memorySize: 512,
+      environment: {
+        ENVIRONMENT: environment,
+        INVENTORY_TABLE: rdsInventoryTable.tableName,
+        METRICS_CACHE_TABLE: metricsCacheTable.tableName,
+        HEALTH_ALERTS_TABLE: healthAlertsTable.tableName,
+        AUDIT_LOG_TABLE: auditLogTable.tableName,
+        DATA_BUCKET: dataBucket.bucketName,
+        EXTERNAL_ID: externalId,
+        CROSS_ACCOUNT_ROLE_NAME: 'RDSDashboardCrossAccountRole',
+        TARGET_ACCOUNTS: JSON.stringify(targetAccounts),
+        TARGET_REGIONS: JSON.stringify(targetRegions),
+        SNS_TOPIC_ARN: snsTopicArn,
+        CLOUDWATCH_NAMESPACE: 'RDSDashboard',
+        LOG_LEVEL: 'INFO'
+      },
+      description: 'Checks RDS instances for compliance violations',
+    });
+
+    // ========================================
+    // Lambda Function: Operations
+    // ========================================
+    this.operationsFunction = new lambda.Function(this, 'OperationsFunction', {
+      functionName: `rds-operations-${environment}`,
+      runtime: lambda.Runtime.PYTHON_3_11,
+      handler: 'handler.lambda_handler',
+      code: lambda.Code.fromAsset('../lambda/operations'),
+      role: lambdaExecutionRole,
+      timeout: cdk.Duration.minutes(5),
+      memorySize: 512,
+      environment: {
+        ENVIRONMENT: environment,
+        INVENTORY_TABLE: rdsInventoryTable.tableName,
+        METRICS_CACHE_TABLE: metricsCacheTable.tableName,
+        HEALTH_ALERTS_TABLE: healthAlertsTable.tableName,
+        AUDIT_LOG_TABLE: auditLogTable.tableName,
+        DATA_BUCKET: dataBucket.bucketName,
+        EXTERNAL_ID: externalId,
+        CROSS_ACCOUNT_ROLE_NAME: 'RDSDashboardCrossAccountRole',
+        SNS_TOPIC_ARN: snsTopicArn,
+        CLOUDWATCH_NAMESPACE: 'RDSDashboard',
+        LOG_LEVEL: 'INFO'
+      },
+      description: 'Executes RDS operations (snapshots, reboots, etc.)',
+    });
+
+    // ========================================
+    // Lambda Function: CloudOps Generator
+    // ========================================
+    this.cloudOpsGeneratorFunction = new lambda.Function(this, 'CloudOpsGeneratorFunction', {
+      functionName: `rds-cloudops-generator-${environment}`,
+      runtime: lambda.Runtime.PYTHON_3_11,
+      handler: 'handler.lambda_handler',
+      code: lambda.Code.fromAsset('../lambda/cloudops-generator'),
+      role: lambdaExecutionRole,
+      timeout: cdk.Duration.minutes(5),
+      memorySize: 512,
+      environment: {
+        ENVIRONMENT: environment,
+        INVENTORY_TABLE: rdsInventoryTable.tableName,
+        DATA_BUCKET: dataBucket.bucketName,
+        CLOUDWATCH_NAMESPACE: 'RDSDashboard',
+        LOG_LEVEL: 'INFO'
+      },
+      description: 'Generates CloudOps request documents',
+    });
+
+    // ========================================
     // CloudFormation Outputs
     // ========================================
     new cdk.CfnOutput(this, 'DiscoveryFunctionArn', {
@@ -174,6 +279,30 @@ export class ComputeStack extends cdk.Stack {
       value: this.costAnalyzerFunction.functionName,
       description: 'Name of RDS Cost Analyzer Lambda function',
       exportName: `${environment}-CostAnalyzerFunctionName`,
+    });
+
+    new cdk.CfnOutput(this, 'QueryHandlerFunctionArn', {
+      value: this.queryHandlerFunction.functionArn,
+      description: 'ARN of Query Handler Lambda function',
+      exportName: `${environment}-QueryHandlerFunctionArn`,
+    });
+
+    new cdk.CfnOutput(this, 'ComplianceCheckerFunctionArn', {
+      value: this.complianceCheckerFunction.functionArn,
+      description: 'ARN of Compliance Checker Lambda function',
+      exportName: `${environment}-ComplianceCheckerFunctionArn`,
+    });
+
+    new cdk.CfnOutput(this, 'OperationsFunctionArn', {
+      value: this.operationsFunction.functionArn,
+      description: 'ARN of Operations Lambda function',
+      exportName: `${environment}-OperationsFunctionArn`,
+    });
+
+    new cdk.CfnOutput(this, 'CloudOpsGeneratorFunctionArn', {
+      value: this.cloudOpsGeneratorFunction.functionArn,
+      description: 'ARN of CloudOps Generator Lambda function',
+      exportName: `${environment}-CloudOpsGeneratorFunctionArn`,
     });
   }
 }

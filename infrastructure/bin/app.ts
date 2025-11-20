@@ -18,6 +18,9 @@ import { DataStack } from '../lib/data-stack';
 import { IamStack } from '../lib/iam-stack';
 import { ComputeStack } from '../lib/compute-stack';
 import { OrchestrationStack } from '../lib/orchestration-stack';
+import { ApiStack } from '../lib/api-stack';
+import { MonitoringStack } from '../lib/monitoring-stack';
+import { BffStack } from '../lib/bff-stack';
 import { ConfigLoader } from '../../config/config-loader';
 
 // Load environment variables (optional, config file takes precedence)
@@ -134,6 +137,64 @@ const orchestrationStack = new OrchestrationStack(app, `RDSDashboard-Orchestrati
 
 // Orchestration stack depends on compute stack
 orchestrationStack.addDependency(computeStack);
+
+// ========================================
+// API Stack (API Gateway)
+// ========================================
+const apiStack = new ApiStack(app, `RDSDashboard-API-${environment}`, {
+  env,
+  queryHandlerFunction: computeStack.queryHandlerFunction,
+  operationsFunction: computeStack.operationsFunction,
+  description: 'RDS Dashboard - API Layer (API Gateway and endpoints)',
+  tags: {
+    Project: 'RDSDashboard',
+    Environment: environment,
+    ManagedBy: 'CDK',
+  },
+});
+
+// API stack depends on compute stack
+apiStack.addDependency(computeStack);
+
+// ========================================
+// Monitoring Stack (CloudWatch Dashboard and Alarms)
+// ========================================
+const monitoringStack = new MonitoringStack(app, `RDSDashboard-Monitoring-${environment}`, {
+  env,
+  discoveryFunction: computeStack.discoveryFunction,
+  healthMonitorFunction: computeStack.healthMonitorFunction,
+  costAnalyzerFunction: computeStack.costAnalyzerFunction,
+  complianceCheckerFunction: computeStack.complianceCheckerFunction,
+  operationsFunction: computeStack.operationsFunction,
+  alertEmail: process.env.ALERT_EMAIL || 'ops@example.com',
+  description: 'RDS Dashboard - Monitoring Layer (CloudWatch dashboards and alarms)',
+  tags: {
+    Project: 'RDSDashboard',
+    Environment: environment,
+    ManagedBy: 'CDK',
+  },
+});
+
+// Monitoring stack depends on compute stack
+monitoringStack.addDependency(computeStack);
+
+// ========================================
+// BFF Stack (Backend-for-Frontend with Secrets Manager)
+// ========================================
+const bffStack = new BffStack(app, `RDSDashboard-BFF-${environment}`, {
+  env,
+  internalApiUrl: apiStack.api.url,
+  apiKeyId: apiStack.apiKey.keyId,
+  description: 'RDS Dashboard - BFF Layer (Secure proxy with Secrets Manager)',
+  tags: {
+    Project: 'RDSDashboard',
+    Environment: environment,
+    ManagedBy: 'CDK',
+  },
+});
+
+// BFF stack depends on API stack
+bffStack.addDependency(apiStack);
 
 // ========================================
 // Stack Tags

@@ -66,8 +66,8 @@
   },
   
   "monitoring": {
-    "cloudwatch_namespace": "RDSDashboard",
-    "sns_email": "dba-team@company.com",
+    "cloudwatch_namespace": "DBMRDSDashboard",
+    "sns_email": "postgresql.support@idp.com",
     "alert_thresholds": {
       "new_instances_threshold": 5,
       "deleted_instances_threshold": 3,
@@ -86,9 +86,9 @@
   },
   
   "tags": {
-    "Project": "RDSDashboard",
+    "Project": "DBMRDSDashboard",
     "ManagedBy": "CDK",
-    "CostCenter": "DBA-Team",
-    "Owner": "DBA-Team"
+    "CostCenter": "DBM-Team",
+    "Owner": "DBM-Team"
   }
 }

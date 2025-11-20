@@ -1,5 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as cloudwatch_actions from 'aws-cdk-lib/aws-cloudwatch-actions';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as subscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
@@ -71,7 +72,7 @@ export class MonitoringStack extends cdk.Stack {
       alarmName: 'RDS-Discovery-Errors',
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    discoveryErrors.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(this.alarmTopic));
+    discoveryErrors.addAlarmAction(new cloudwatch_actions.SnsAction(this.alarmTopic));
 
     // Discovery Function Duration
     const discoveryDuration = new cloudwatch.Alarm(this, 'DiscoveryDuration', {
@@ -86,7 +87,7 @@ export class MonitoringStack extends cdk.Stack {
       alarmName: 'RDS-Discovery-Duration',
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    discoveryDuration.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(this.alarmTopic));
+    discoveryDuration.addAlarmAction(new cloudwatch_actions.SnsAction(this.alarmTopic));
 
     // Discovery Function Throttles
     const discoveryThrottles = new cloudwatch.Alarm(this, 'DiscoveryThrottles', {
@@ -100,7 +101,7 @@ export class MonitoringStack extends cdk.Stack {
       alarmName: 'RDS-Discovery-Throttles',
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    discoveryThrottles.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(this.alarmTopic));
+    discoveryThrottles.addAlarmAction(new cloudwatch_actions.SnsAction(this.alarmTopic));
   }
 
   private createHealthMonitorAlarms(healthMonitorFunction: lambda.IFunction): void {
@@ -116,7 +117,7 @@ export class MonitoringStack extends cdk.Stack {
       alarmName: 'RDS-HealthMonitor-Errors',
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    healthErrors.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(this.alarmTopic));
+    healthErrors.addAlarmAction(new cloudwatch_actions.SnsAction(this.alarmTopic));
 
     // Cache Hit Rate (Custom Metric)
     const cacheHitRate = new cloudwatch.Metric({
@@ -135,7 +136,7 @@ export class MonitoringStack extends cdk.Stack {
       alarmName: 'RDS-LowCacheHitRate',
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    lowCacheHitRate.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(this.alarmTopic));
+    lowCacheHitRate.addAlarmAction(new cloudwatch_actions.SnsAction(this.alarmTopic));
   }
 
   private createCostAnalyzerAlarms(costAnalyzerFunction: lambda.IFunction): void {
@@ -151,7 +152,7 @@ export class MonitoringStack extends cdk.Stack {
       alarmName: 'RDS-CostAnalyzer-Errors',
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    costErrors.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(this.alarmTopic));
+    costErrors.addAlarmAction(new cloudwatch_actions.SnsAction(this.alarmTopic));
 
     // Total Monthly Cost (Custom Metric)
     const totalCost = new cloudwatch.Metric({
@@ -170,7 +171,7 @@ export class MonitoringStack extends cdk.Stack {
       alarmName: 'RDS-HighMonthlyCost',
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    highCost.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(this.alarmTopic));
+    highCost.addAlarmAction(new cloudwatch_actions.SnsAction(this.alarmTopic));
   }
 
   private createComplianceAlarms(complianceFunction: lambda.IFunction): void {
@@ -186,7 +187,7 @@ export class MonitoringStack extends cdk.Stack {
       alarmName: 'RDS-Compliance-Errors',
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    complianceErrors.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(this.alarmTopic));
+    complianceErrors.addAlarmAction(new cloudwatch_actions.SnsAction(this.alarmTopic));
 
     // Critical Violations (Custom Metric)
     const criticalViolations = new cloudwatch.Metric({
@@ -205,7 +206,7 @@ export class MonitoringStack extends cdk.Stack {
       alarmName: 'RDS-HighCriticalViolations',
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    highViolations.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(this.alarmTopic));
+    highViolations.addAlarmAction(new cloudwatch_actions.SnsAction(this.alarmTopic));
   }
 
   private createOperationsAlarms(operationsFunction: lambda.IFunction): void {
@@ -221,7 +222,7 @@ export class MonitoringStack extends cdk.Stack {
       alarmName: 'RDS-Operations-Errors',
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    opsErrors.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(this.alarmTopic));
+    opsErrors.addAlarmAction(new cloudwatch_actions.SnsAction(this.alarmTopic));
 
     // Operation Success Rate (Custom Metric)
     const successRate = new cloudwatch.Metric({
@@ -240,7 +241,7 @@ export class MonitoringStack extends cdk.Stack {
       alarmName: 'RDS-LowOperationSuccessRate',
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    lowSuccessRate.addAlarmAction(new cdk.aws_cloudwatch_actions.SnsAction(this.alarmTopic));
+    lowSuccessRate.addAlarmAction(new cloudwatch_actions.SnsAction(this.alarmTopic));
   }
 
 

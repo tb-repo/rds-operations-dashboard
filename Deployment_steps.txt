@@ -1,0 +1,117 @@
+ Great! Let's Deploy from Your Local Machine
+✅ Step 1: Verify Prerequisites
+# Check AWS CLI
+aws --version
+
+# Check Node.js
+node --version
+
+# Check Python
+python --version
+
+# Check CDK
+cdk --version
+# If not installed: npm install -g aws-cdk
+✅ Step 2: Configure AWS CLI
+# Configure with your IAM user credentials (NOT root!)
+aws configure
+
+# Enter when prompted:
+# AWS Access Key ID: [Your IAM user access key]
+# AWS Secret Access Key: [Your IAM user secret key]
+# Default region: ap-southeast-1
+# Default output format: json
+
+# Verify it works
+aws sts get-caller-identity
+✅ Step 3: Navigate to Project
+# Go to your project directory
+cd rds-operations-dashboard
+✅ Step 4: Install Dependencies
+# Install infrastructure dependencies
+cd infrastructure
+npm install
+
+# Install CDK globally if not already installed
+npm install -g aws-cdk
+
+# Verify CDK
+cdk --version
+✅ Step 5: Bootstrap CDK
+# Get your account ID
+aws sts get-caller-identity --query Account --output text
+
+# Bootstrap CDK (one-time setup)
+cdk bootstrap aws://YOUR_ACCOUNT_ID/ap-southeast-1
+# Replace YOUR_ACCOUNT_ID with the actual number from above
+✅ Step 6: Deploy Infrastructure
+# Synthesize CloudFormation templates (verify everything compiles)
+cdk synth --all
+
+# Deploy all stacks (takes 10-15 minutes)
+cdk deploy --all --require-approval never
+
+# Or deploy with confirmation prompts:
+# cdk deploy --all
+✅ Step 7: Save Deployment Outputs
+After deployment completes, save these:
+
+# Get API Gateway URL
+aws cloudformation describe-stacks `
+  --stack-name RDSDashboard-API-prod `
+  --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' `
+  --output text
+
+# Get API Key
+
+aws cloudformation describe-stacks --stack-name RDSDashboard-API-prod --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text
+
+https://0pjyr8lkpl.execute-api.ap-southeast-1.amazonaws.com/prod/
+
+aws cloudformation describe-stacks --stack-name RDSDashboard-API-prod --query 'Stacks[0].Outputs[?OutputKey==`ApiKeyId`].OutputValue' --output text   
+ 
+r5oxfieb66
+
+aws apigateway get-api-key --api-key $apiKeyId --include-value --query 'value' --output text
+
+mBUq3FxIobYOjMSOmY8K8zgM1UHlxMZ7feV9Mr7g
+
+aws cloudformation list-stacks --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE --query "StackSummaries[?contains(StackName, 'RDSDashboard')].StackName" --output table
+-------------------------------------
+|            ListStacks             |
++-----------------------------------+
+|  RDSDashboard-Orchestration-prod  |
+|  RDSDashboard-Compute-prod        |
+|  RDSDashboard-IAM-prod            |
+|  RDSDashboard-Data-prod           |
++-----------------------------------+
+
+aws cloudformation list-stacks --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE --query "StackSummaries[?contains(StackName, 'RDSDashboard')].StackName" --output table
+
+-------------------------------------
+|            ListStacks             |
++-----------------------------------+
+|  RDSDashboard-API-prod            |
+|  RDSDashboard-Monitoring-prod     |
+|  RDSDashboard-Orchestration-prod  |
+|  RDSDashboard-Compute-prod        |
+|  RDSDashboard-IAM-prod            |
+|  RDSDashboard-Data-prod           |
++-----------------------------------+
+
+📊 Monitor Progress
+While deploying, you can:
+
+Watch the terminal output
+Check AWS Console → CloudFormation to see stacks being created
+Each stack takes 2-5 minutes
+🎯 After Successful Deployment
+Once deployment completes:
+
+✅ Save API URL and API Key
+✅ Deploy frontend (I'll guide you)
+✅ Create test RDS instance
+✅ Access your dashboard!
+Ready to start? Run the commands above and let me know how it goes!
+
+If you encounter any errors, just paste them here and I'll help you fix them immediately.
