@@ -17,9 +17,7 @@ from decimal import Decimal
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from shared.logger import get_logger
-from shared.aws_clients import get_dynamodb_client
-from shared.config import get_config
+from shared import StructuredLogger, AWSClients, Config
 
 # Initialize logger
 logger = None  # Will be initialized in handler with Lambda context
@@ -38,16 +36,15 @@ class QueryHandler:
     
     def __init__(self):
         """Initialize query handler."""
-        self.config = get_config()
-        self.dynamodb = get_dynamodb_client()
+        self.dynamodb = AWSClients.get_dynamodb_resource()
         
-        # Table names
-        self.inventory_table = self.config.get('inventory_table', 'rds_inventory')
-        self.metrics_cache_table = self.config.get('metrics_cache_table', 'rds_metrics_cache')
-        self.health_alerts_table = self.config.get('health_alerts_table', 'rds_health_alerts')
-        self.cost_analysis_table = self.config.get('cost_analysis_table', 'rds_cost_analysis')
-        self.compliance_table = self.config.get('compliance_table', 'rds_compliance')
-        self.audit_log_table = self.config.get('audit_log_table', 'rds_audit_log')
+        # Table names from environment variables
+        self.inventory_table = os.environ.get('INVENTORY_TABLE', 'rds-inventory-prod')
+        self.metrics_cache_table = os.environ.get('METRICS_CACHE_TABLE', 'metrics-cache-prod')
+        self.health_alerts_table = os.environ.get('HEALTH_ALERTS_TABLE', 'health-alerts-prod')
+        self.cost_analysis_table = 'cost-snapshots-prod'
+        self.compliance_table = 'rds_compliance'
+        self.audit_log_table = os.environ.get('AUDIT_LOG_TABLE', 'audit-log-prod')
     
     def handle_request(self, event: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -60,12 +57,48 @@ class QueryHandler:
             dict: API Gateway response
         """
         try:
-            # Extract action from event
+            # Extract action from event or path
             action = event.get('action')
+            
+            # For API Gateway proxy integration, extract from path
             if not action:
-                # Try to extract from body for proxy integration
-                body = json.loads(event.get('body', '{}'))
-                action = body.get('action')
+                path = event.get('path', '')
+                if path.startswith('/'):
+                    path = path[1:]  # Remove leading slash
+                
+                # Check for path parameters (e.g., /instances/{id}, /health/{id})
+                path_parts = path.split('/')
+                
+                if len(path_parts) == 2 and path_parts[0] == 'instances':
+                    # /instances/{instanceId}
+                    action = 'get_instance'
+                    if 'pathParameters' not in event:
+                        event['pathParameters'] = {}
+                    event['pathParameters']['instanceId'] = path_parts[1]
+                elif len(path_parts) == 2 and path_parts[0] == 'health':
+                    # /health/{instanceId}
+                    action = 'get_instance_health'
+                    if 'pathParameters' not in event:
+                        event['pathParameters'] = {}
+                    event['pathParameters']['instanceId'] = path_parts[1]
+                else:
+                    # Map simple paths to actions
+                    path_to_action = {
+                        'instances': 'list_instances',
+                        'health': 'get_health',
+                        'alerts': 'get_alerts',
+                        'costs': 'get_costs',
+                        'compliance': 'get_compliance'
+                    }
+                    action = path_to_action.get(path_parts[0] if path_parts else '')
+            
+            # Try to extract from body for POST requests
+            if not action and event.get('body'):
+                try:
+                    body = json.loads(event.get('body'))
+                    action = body.get('action')
+                except (json.JSONDecodeError, TypeError):
+                    pass
             
             if not action:
                 return self._error_response(400, 'Missing action parameter')
@@ -75,6 +108,8 @@ class QueryHandler:
                 return self._list_instances(event)
             elif action == 'get_instance':
                 return self._get_instance(event)
+            elif action == 'get_instance_health':
+                return self._get_instance_health(event)
             elif action == 'get_metrics':
                 return self._get_metrics(event)
             elif action == 'get_health':
@@ -97,7 +132,7 @@ class QueryHandler:
                 return self._error_response(400, f'Unknown action: {action}')
                 
         except Exception as e:
-            logger.error('Error handling request', error=str(e), action=action)
+            logger.error('Error handling request', error=str(e), action=action if 'action' in locals() else 'unknown')
             return self._error_response(500, f'Internal error: {str(e)}')
     
     def _list_instances(self, event: Dict[str, Any]) -> Dict[str, Any]:
@@ -206,6 +241,53 @@ class QueryHandler:
             logger.error('Error getting instance', error=str(e), instance_id=instance_id)
             return self._error_response(500, f'Error getting instance: {str(e)}')
     
+    def _get_instance_health(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        """Get health metrics and alerts for a specific instance."""
+        try:
+            instance_id = event.get('instanceId') or event.get('pathParameters', {}).get('instanceId')
+            
+            if not instance_id:
+                return self._error_response(400, 'Missing instance_id')
+            
+            # Get recent metrics from cache (last 50 data points)
+            metrics_table = self.dynamodb.Table(self.metrics_cache_table)
+            metrics_response = metrics_table.scan(
+                FilterExpression='instance_id = :id',
+                ExpressionAttributeValues={':id': instance_id},
+                Limit=50
+            )
+            metrics = metrics_response.get('Items', [])
+            
+            # Sort by timestamp descending
+            metrics.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+            
+            # Get active alerts for this instance
+            alerts_table = self.dynamodb.Table(self.health_alerts_table)
+            alerts_response = alerts_table.scan(
+                FilterExpression='instance_id = :id AND resolved = :resolved',
+                ExpressionAttributeValues={
+                    ':id': instance_id,
+                    ':resolved': False
+                }
+            )
+            alerts = alerts_response.get('Items', [])
+            
+            logger.info('Retrieved instance health',
+                instance_id=instance_id,
+                metrics_count=len(metrics),
+                alerts_count=len(alerts)
+            )
+            
+            return self._success_response({
+                'instance_id': instance_id,
+                'metrics': metrics,
+                'alerts': alerts
+            })
+            
+        except Exception as e:
+            logger.error('Error getting instance health', error=str(e), instance_id=instance_id if 'instance_id' in locals() else 'unknown')
+            return self._error_response(500, f'Error getting instance health: {str(e)}')
+    
     def _get_metrics(self, event: Dict[str, Any]) -> Dict[str, Any]:
         """Get metrics for a specific instance."""
         try:
@@ -278,6 +360,51 @@ class QueryHandler:
             logger.error('Error getting health status', error=str(e))
             return self._error_response(500, f'Error getting health status: {str(e)}')
     
+    def _get_instance_health(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        """Get health metrics and alerts for a specific instance."""
+        try:
+            instance_id = event.get('pathParameters', {}).get('instanceId')
+            
+            if not instance_id:
+                return self._error_response(400, 'Missing instance_id')
+            
+            # Get metrics from cache
+            metrics_table = self.dynamodb.Table(self.metrics_cache_table)
+            metrics_response = metrics_table.query(
+                KeyConditionExpression='instance_id = :id',
+                ExpressionAttributeValues={':id': instance_id},
+                ScanIndexForward=False,  # Most recent first
+                Limit=50
+            )
+            metrics = metrics_response.get('Items', [])
+            
+            # Get active alerts for this instance
+            alerts_table = self.dynamodb.Table(self.health_alerts_table)
+            alerts_response = alerts_table.scan(
+                FilterExpression='instance_id = :id AND alert_status = :status',
+                ExpressionAttributeValues={
+                    ':id': instance_id,
+                    ':status': 'active'
+                }
+            )
+            alerts = alerts_response.get('Items', [])
+            
+            logger.info('Retrieved instance health',
+                instance_id=instance_id,
+                metrics_count=len(metrics),
+                alerts_count=len(alerts)
+            )
+            
+            return self._success_response({
+                'instance_id': instance_id,
+                'metrics': metrics,
+                'alerts': alerts
+            })
+            
+        except Exception as e:
+            logger.error('Error getting instance health', error=str(e), instance_id=instance_id if 'instance_id' in locals() else 'unknown')
+            return self._error_response(500, f'Error getting instance health: {str(e)}')
+    
     def _get_alerts(self, event: Dict[str, Any]) -> Dict[str, Any]:
         """Get active alerts."""
         return self._get_health(event)  # Same implementation
@@ -288,10 +415,19 @@ class QueryHandler:
             params = event.get('queryStringParameters', {}) or {}
             group_by = params.get('groupBy', 'account')  # account, region, engine
             
-            table = self.dynamodb.Table(self.cost_analysis_table)
-            response = table.scan()
-            
-            items = response.get('Items', [])
+            try:
+                table = self.dynamodb.Table(self.cost_analysis_table)
+                response = table.scan()
+                items = response.get('Items', [])
+            except Exception as table_error:
+                # Table doesn't exist yet - return empty data
+                logger.warn('Cost analysis table not found, returning empty data', error=str(table_error))
+                return self._success_response({
+                    'total_cost': 0,
+                    'group_by': group_by,
+                    'costs': {},
+                    'message': 'Cost analysis not yet available'
+                })
             
             # Group costs
             grouped_costs = {}
@@ -370,10 +506,20 @@ class QueryHandler:
             params = event.get('queryStringParameters', {}) or {}
             severity = params.get('severity')
             
-            table = self.dynamodb.Table(self.compliance_table)
-            response = table.scan()
-            
-            items = response.get('Items', [])
+            try:
+                table = self.dynamodb.Table(self.compliance_table)
+                response = table.scan()
+                items = response.get('Items', [])
+            except Exception as table_error:
+                # Table doesn't exist yet - return empty data
+                logger.warn('Compliance table not found, returning empty data', error=str(table_error))
+                return self._success_response({
+                    'checks': [],
+                    'total': 0,
+                    'compliant': 0,
+                    'non_compliant': 0,
+                    'message': 'Compliance checking not yet available'
+                })
             
             # Calculate compliance score
             total_instances = len(items)
@@ -387,10 +533,11 @@ class QueryHandler:
             )
             
             return self._success_response({
-                'total_instances': total_instances,
-                'compliant_instances': compliant_instances,
-                'compliance_score': compliance_score,
-                'instances': items
+                'checks': items,
+                'total': total_instances,
+                'compliant': compliant_instances,
+                'non_compliant': total_instances - compliant_instances,
+                'compliance_score': compliance_score
             })
             
         except Exception as e:
@@ -513,7 +660,7 @@ def lambda_handler(event, context):
         dict: API Gateway response
     """
     global logger
-    logger = get_logger('query-handler', lambda_context=context)
+    logger = StructuredLogger('query-handler', lambda_context=context)
     
     logger.info('Query request received',
         action=event.get('action'),

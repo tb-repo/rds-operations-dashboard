@@ -12,7 +12,7 @@ from datetime import datetime
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from shared.logger import get_logger
-from shared.aws_clients import get_rds_client
+from shared.aws_clients import AWSClients
 
 logger = get_logger(__name__)
 
@@ -235,7 +235,7 @@ class ComplianceChecker:
                                 'remediation': f"Review and schedule maintenance during approved window: aws rds describe-pending-maintenance-actions --resource-identifier arn:aws:rds:{instance.get('region')}:*:db:{instance['instance_id']}"
                             })
                     except Exception as e:
-                        logger.warning(f"Failed to parse maintenance date for {instance['instance_id']}: {str(e)}")
+                        logger.warn(f"Failed to parse maintenance date for {instance['instance_id']}: {str(e)}")
         
         return violations
     
@@ -277,7 +277,7 @@ class ComplianceChecker:
             return None
             
         except Exception as e:
-            logger.warning(f"Failed to get latest engine version for {engine}: {str(e)}")
+            logger.warn(f"Failed to get latest engine version for {engine}: {str(e)}")
             return None
     
     def _get_pending_maintenance(
@@ -314,13 +314,13 @@ class ComplianceChecker:
             return []
             
         except Exception as e:
-            logger.warning(f"Failed to get pending maintenance for {instance_id}: {str(e)}")
+            logger.warn(f"Failed to get pending maintenance for {instance_id}: {str(e)}")
             return []
     
     def _get_rds_client(self, region: str):
         """Get or create RDS client for region."""
         if region not in self.rds_clients:
-            self.rds_clients[region] = get_rds_client(region)
+            self.rds_clients[region] = AWSClients.get_rds_client(region)
         return self.rds_clients[region]
     
     def _is_version_compliant(self, current: str, latest: str) -> bool:
@@ -347,7 +347,7 @@ class ComplianceChecker:
             return minor_diff <= 1
             
         except Exception as e:
-            logger.warning(f"Failed to compare versions {current} and {latest}: {str(e)}")
+            logger.warn(f"Failed to compare versions {current} and {latest}: {str(e)}")
             return True  # Assume compliant if we can't parse
     
     def _calculate_versions_behind(self, current: str, latest: str) -> int:

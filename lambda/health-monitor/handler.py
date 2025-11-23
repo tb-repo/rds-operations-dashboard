@@ -49,7 +49,7 @@ def lambda_handler(event, context):
     
     Requirements: REQ-2.1 (health monitoring), REQ-8.1 (cost optimization)
     """
-    correlation_id = context.request_id if context else 'local-test'
+    correlation_id = context.aws_request_id if context else 'local-test'
     logger.set_correlation_id(correlation_id)
     
     logger.info('Health monitor service started',

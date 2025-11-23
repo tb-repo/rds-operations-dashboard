@@ -38,9 +38,9 @@ export default function Dashboard() {
 
   // Calculate stats
   const totalInstances = instances?.length || 0
-  const activeAlerts = alerts?.filter(a => !a.resolved).length || 0
-  const totalMonthlyCost = costs?.reduce((sum, c) => sum + c.monthly_cost, 0) || 0
-  const complianceIssues = compliance?.filter(c => c.status === 'non_compliant').length || 0
+  const activeAlerts = Array.isArray(alerts) ? alerts.filter(a => !a.resolved).length : 0
+  const totalMonthlyCost = Array.isArray(costs) ? costs.reduce((sum, c) => sum + c.monthly_cost, 0) : 0
+  const complianceIssues = Array.isArray(compliance) ? compliance.filter(c => c.status === 'non_compliant').length : 0
 
   // Engine distribution
   const engineCounts = instances?.reduce((acc, inst) => {
@@ -115,7 +115,7 @@ export default function Dashboard() {
                 fill="#8884d8"
                 dataKey="value"
               >
-                {engineData.map((entry, index) => (
+                {engineData.map((_entry, index) => (
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Pie>

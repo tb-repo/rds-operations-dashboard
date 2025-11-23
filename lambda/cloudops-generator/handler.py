@@ -34,7 +34,7 @@ class CloudOpsRequestGenerator:
         """Initialize generator."""
         self.config = Config.load()
         self.dynamodb = AWSClients.get_dynamodb_resource()
-        self.s3 = AWSClients.get_s3_client()
+        self.s3 = AWSClients.AWSClients.get_s3_client()
         
         self.inventory_table = self.config.dynamodb.inventory_table
         self.compliance_table = 'rds_compliance'  # TODO: Add to config

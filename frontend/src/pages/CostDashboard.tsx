@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { DollarSign, TrendingDown, TrendingUp } from 'lucide-react'
+import { DollarSign, TrendingDown } from 'lucide-react'
 import { api } from '@/lib/api'
 import LoadingSpinner from '@/components/LoadingSpinner'
 import ErrorMessage from '@/components/ErrorMessage'
@@ -26,16 +26,16 @@ export default function CostDashboard() {
   }
 
   // Calculate totals
-  const totalMonthlyCost = costs?.reduce((sum, c) => sum + c.monthly_cost, 0) || 0
-  const totalComputeCost = costs?.reduce((sum, c) => sum + c.compute_cost, 0) || 0
-  const totalStorageCost = costs?.reduce((sum, c) => sum + c.storage_cost, 0) || 0
-  const totalSavings = recommendations?.reduce((sum, r) => sum + r.estimated_savings, 0) || 0
+  const totalMonthlyCost = Array.isArray(costs) ? costs.reduce((sum, c) => sum + c.monthly_cost, 0) : 0
+  const totalComputeCost = Array.isArray(costs) ? costs.reduce((sum, c) => sum + c.compute_cost, 0) : 0
+  const totalStorageCost = Array.isArray(costs) ? costs.reduce((sum, c) => sum + c.storage_cost, 0) : 0
+  const totalSavings = Array.isArray(recommendations) ? recommendations.reduce((sum, r) => sum + r.estimated_savings, 0) : 0
 
   // Cost by account
-  const accountCosts = costs?.reduce((acc, cost) => {
+  const accountCosts = Array.isArray(costs) ? costs.reduce((acc, cost) => {
     acc[cost.account_id] = (acc[cost.account_id] || 0) + cost.monthly_cost
     return acc
-  }, {} as Record<string, number>) || {}
+  }, {} as Record<string, number>) : {}
 
   const accountData = Object.entries(accountCosts).map(([name, value]) => ({
     name,
@@ -43,10 +43,10 @@ export default function CostDashboard() {
   }))
 
   // Cost by region
-  const regionCosts = costs?.reduce((acc, cost) => {
+  const regionCosts = Array.isArray(costs) ? costs.reduce((acc, cost) => {
     acc[cost.region] = (acc[cost.region] || 0) + cost.monthly_cost
     return acc
-  }, {} as Record<string, number>) || {}
+  }, {} as Record<string, number>) : {}
 
   const regionData = Object.entries(regionCosts).map(([name, value]) => ({
     name,
@@ -57,7 +57,7 @@ export default function CostDashboard() {
   const costBreakdown = [
     { name: 'Compute', value: totalComputeCost },
     { name: 'Storage', value: totalStorageCost },
-    { name: 'Backup', value: costs?.reduce((sum, c) => sum + c.backup_cost, 0) || 0 },
+    { name: 'Backup', value: Array.isArray(costs) ? costs.reduce((sum, c) => sum + c.backup_cost, 0) : 0 },
   ]
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b']
@@ -125,7 +125,7 @@ export default function CostDashboard() {
                 fill="#8884d8"
                 dataKey="value"
               >
-                {costBreakdown.map((entry, index) => (
+                {costBreakdown.map((_entry, index) => (
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
               </Pie>

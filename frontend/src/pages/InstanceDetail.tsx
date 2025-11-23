@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Activity, HardDrive, Cpu, Database as DatabaseIcon } from 'lucide-react'
+// import { Activity, HardDrive, Cpu, Database as DatabaseIcon } from 'lucide-react'
 import { api, OperationRequest } from '@/lib/api'
 import LoadingSpinner from '@/components/LoadingSpinner'
 import ErrorMessage from '@/components/ErrorMessage'
 import StatusBadge from '@/components/StatusBadge'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 export default function InstanceDetail() {
   const { instanceId } = useParams<{ instanceId: string }>()
@@ -21,14 +21,16 @@ export default function InstanceDetail() {
 
   const { data: health, isLoading: healthLoading } = useQuery({
     queryKey: ['health', instanceId],
-    queryFn: () => api.getHealth(instanceId),
+    queryFn: () => api.getHealth(instanceId!),
     enabled: !!instanceId,
+    retry: false, // Don't retry if endpoint doesn't exist
   })
 
   const { data: alerts } = useQuery({
     queryKey: ['alerts', instanceId],
-    queryFn: () => api.getAlerts(instanceId),
+    queryFn: () => api.getAlerts(instanceId!),
     enabled: !!instanceId,
+    retry: false, // Don't retry if endpoint doesn't exist
   })
 
   const operationMutation = useMutation({

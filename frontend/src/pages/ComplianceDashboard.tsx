@@ -23,8 +23,8 @@ export default function ComplianceDashboard() {
   // Calculate stats
   const totalChecks = compliance?.length || 0
   const compliantChecks = compliance?.filter(c => c.status === 'compliant').length || 0
-  const nonCompliantChecks = totalChecks - compliantChecks
-  const complianceRate = totalChecks > 0 ? ((compliantChecks / totalChecks) * 100).toFixed(1) : '0'
+  // const nonCompliantChecks = compliance?.filter(c => c.status === 'non_compliant').length || 0
+  const complianceRate = totalChecks > 0 ? ((compliantChecks / totalChecks) * 100).toFixed(1) : '100'
 
   // Group by severity
   const criticalIssues = compliance?.filter(

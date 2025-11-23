@@ -13,7 +13,7 @@ from typing import Dict, List, Any
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from shared.logger import get_logger
-from shared.aws_clients import get_s3_client
+from shared.aws_clients import AWSClients
 
 logger = get_logger(__name__)
 
@@ -29,7 +29,7 @@ class ComplianceReporter:
             config: Configuration dict
         """
         self.config = config
-        self.s3 = get_s3_client()
+        self.s3 = AWSClients.get_s3_client()
     
     def generate_compliance_report(
         self,

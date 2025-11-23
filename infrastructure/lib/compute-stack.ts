@@ -235,6 +235,9 @@ export class ComputeStack extends cdk.Stack {
       environment: {
         ENVIRONMENT: environment,
         INVENTORY_TABLE: rdsInventoryTable.tableName,
+        METRICS_CACHE_TABLE: metricsCacheTable.tableName,
+        HEALTH_ALERTS_TABLE: healthAlertsTable.tableName,
+        AUDIT_LOG_TABLE: auditLogTable.tableName,
         DATA_BUCKET: dataBucket.bucketName,
         CLOUDWATCH_NAMESPACE: 'RDSDashboard',
         LOG_LEVEL: 'INFO'

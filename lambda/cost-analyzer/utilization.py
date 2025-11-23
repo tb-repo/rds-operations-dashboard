@@ -14,7 +14,7 @@ from decimal import Decimal
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from shared.logger import get_logger
-from shared.aws_clients import get_cloudwatch_client, get_dynamodb_client
+from shared.aws_clients import AWSClients, get_dynamodb_client
 
 logger = get_logger(__name__)
 
@@ -36,8 +36,8 @@ class UtilizationAnalyzer:
             config: Configuration dict
         """
         self.config = config
-        self.cloudwatch = get_cloudwatch_client()
-        self.dynamodb = get_dynamodb_client()
+        self.cloudwatch = AWSClients.get_cloudwatch_client()
+        self.dynamodb = AWSClients.get_dynamodb_client()
     
     def analyze_all_instances(self, instances: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
         """
@@ -109,7 +109,7 @@ class UtilizationAnalyzer:
         # Check for memory pressure
         if analysis['avg_free_memory_pct'] < self.LOW_MEMORY_THRESHOLD:
             analysis['has_memory_pressure'] = True
-            logger.warning(f"{instance_id} has memory pressure: avg free memory {analysis['avg_free_memory_pct']:.1f}%")
+            logger.warn(f"{instance_id} has memory pressure: avg free memory {analysis['avg_free_memory_pct']:.1f}%")
         
         # Calculate utilization score (0-100)
         # Higher score = better utilized

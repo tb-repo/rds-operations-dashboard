@@ -145,6 +145,7 @@ const apiStack = new ApiStack(app, `RDSDashboard-API-${environment}`, {
   env,
   queryHandlerFunction: computeStack.queryHandlerFunction,
   operationsFunction: computeStack.operationsFunction,
+  cloudOpsGeneratorFunction: computeStack.cloudOpsGeneratorFunction,
   description: 'RDS Dashboard - API Layer (API Gateway and endpoints)',
   tags: {
     Project: 'RDSDashboard',

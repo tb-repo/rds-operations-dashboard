@@ -14,7 +14,7 @@ from typing import Dict, List, Any, Optional
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from shared.logger import get_logger
-from shared.aws_clients import get_s3_client, get_dynamodb_client, get_cloudwatch_client
+from shared.aws_clients import AWSClients, get_dynamodb_client, get_cloudwatch_client
 
 logger = get_logger(__name__)
 
@@ -30,9 +30,9 @@ class CostReporter:
             config: Configuration dict
         """
         self.config = config
-        self.s3 = get_s3_client()
-        self.dynamodb = get_dynamodb_client()
-        self.cloudwatch = get_cloudwatch_client()
+        self.s3 = AWSClients.get_s3_client()
+        self.dynamodb = AWSClients.get_dynamodb_client()
+        self.cloudwatch = AWSClients.get_cloudwatch_client()
         self.cost_snapshots_table = config.get('cost_snapshots_table', 'cost-snapshots-prod')
     
     def generate_report(
@@ -224,7 +224,7 @@ class CostReporter:
             # Get current snapshot
             current_snapshot = self._get_snapshot_by_date(today)
             if not current_snapshot:
-                logger.warning("No current snapshot found for trend analysis")
+                logger.warn("No current snapshot found for trend analysis")
                 return {}
             
             # Get snapshot from 30 days ago (previous month)
@@ -367,7 +367,7 @@ class CostReporter:
             snapshots = self._get_recent_snapshots(days=30)
             
             if not snapshots:
-                logger.warning("No historical snapshots found for trend report")
+                logger.warn("No historical snapshots found for trend report")
                 return {}
             
             # Calculate daily costs
@@ -475,7 +475,7 @@ class CostReporter:
             return None
             
         except Exception as e:
-            logger.warning(f"Failed to get snapshot for {snapshot_date}: {str(e)}")
+            logger.warn(f"Failed to get snapshot for {snapshot_date}: {str(e)}")
             return None
     
     def _get_recent_snapshots(self, days: int = 30) -> List[Dict[str, Any]]:

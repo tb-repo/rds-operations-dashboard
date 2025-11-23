@@ -40,33 +40,42 @@ export class BffStack extends cdk.Stack {
     // ========================================
     this.bffFunction = new lambda.Function(this, 'BffFunction', {
       functionName: `rds-dashboard-bff-${environment}`,
-      runtime: lambda.Runtime.NODEJS_16_X,
+      runtime: lambda.Runtime.NODEJS_18_X,
       handler: 'index.handler',
       code: lambda.Code.fromInline(`
-const AWS = require('aws-sdk');
+const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
 const https = require('https');
 const url = require('url');
 
-const secretsManager = new AWS.SecretsManager();
+const secretsManager = new SecretsManagerClient({});
 
 // Cache for API credentials
 let cachedCredentials = null;
 let cacheExpiry = 0;
 
 async function getApiCredentials() {
+  console.log('[getApiCredentials] Starting...');
   const now = Date.now();
   
   // Return cached credentials if still valid (5 minutes cache)
   if (cachedCredentials && now < cacheExpiry) {
+    console.log('[getApiCredentials] Using cached credentials');
     return cachedCredentials;
   }
 
   try {
-    const result = await secretsManager.getSecretValue({
+    console.log('[getApiCredentials] Fetching from Secrets Manager:', process.env.API_SECRET_ARN);
+    const command = new GetSecretValueCommand({
       SecretId: process.env.API_SECRET_ARN
-    }).promise();
+    });
+    const result = await secretsManager.send(command);
     
+    console.log('[getApiCredentials] Secret retrieved successfully');
     const secret = JSON.parse(result.SecretString);
+    
+    console.log('[getApiCredentials] API URL:', secret.apiUrl);
+    console.log('[getApiCredentials] API Key exists:', !!secret.apiKey);
+    console.log('[getApiCredentials] API Key length:', secret.apiKey?.length);
     
     cachedCredentials = {
       apiUrl: secret.apiUrl,
@@ -76,63 +85,116 @@ async function getApiCredentials() {
     
     return cachedCredentials;
   } catch (error) {
-    console.error('Failed to retrieve API credentials:', error);
-    throw new Error('Unable to retrieve API credentials');
+    console.error('[getApiCredentials] ERROR:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack
+    });
+    throw new Error(\`Unable to retrieve API credentials: \${error.message}\`);
   }
 }
 
 async function makeApiRequest(path, method, body, headers) {
-  const credentials = await getApiCredentials();
-  const apiUrl = new URL(path, credentials.apiUrl);
+  console.log('[makeApiRequest] Starting...');
+  console.log('[makeApiRequest] Path:', path);
+  console.log('[makeApiRequest] Method:', method);
   
-  const options = {
-    hostname: apiUrl.hostname,
-    port: 443,
-    path: apiUrl.pathname + apiUrl.search,
-    method: method,
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': credentials.apiKey,
-      ...headers
-    }
-  };
-
-  return new Promise((resolve, reject) => {
-    const req = https.request(options, (res) => {
-      let data = '';
-      
-      res.on('data', (chunk) => {
-        data += chunk;
-      });
-      
-      res.on('end', () => {
-        try {
-          const response = {
-            statusCode: res.statusCode,
-            headers: res.headers,
-            body: data
-          };
-          resolve(response);
-        } catch (error) {
-          reject(error);
-        }
-      });
-    });
-
-    req.on('error', (error) => {
-      reject(error);
-    });
-
-    if (body) {
-      req.write(typeof body === 'string' ? body : JSON.stringify(body));
-    }
+  try {
+    const credentials = await getApiCredentials();
     
-    req.end();
-  });
+    // Construct full URL by appending path to base URL
+    // Remove trailing slash from apiUrl and leading slash from path to avoid double slashes
+    const baseUrl = credentials.apiUrl.replace(/\\/$/, '');
+    const cleanPath = path.replace(/^\\//, '');
+    const fullUrl = baseUrl + '/' + cleanPath;
+    const apiUrl = new URL(fullUrl);
+    
+    console.log('[makeApiRequest] Base URL:', baseUrl);
+    console.log('[makeApiRequest] Clean path:', cleanPath);
+    console.log('[makeApiRequest] Full URL:', apiUrl.href);
+    console.log('[makeApiRequest] Hostname:', apiUrl.hostname);
+    console.log('[makeApiRequest] Path:', apiUrl.pathname + apiUrl.search);
+    
+    const options = {
+      hostname: apiUrl.hostname,
+      port: 443,
+      path: apiUrl.pathname + apiUrl.search,
+      method: method,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': credentials.apiKey,
+        ...headers
+      }
+    };
+    
+    console.log('[makeApiRequest] Request options:', JSON.stringify({
+      ...options,
+      headers: {
+        ...options.headers,
+        'x-api-key': options.headers['x-api-key'] ? '[REDACTED]' : undefined
+      }
+    }));
+
+    return new Promise((resolve, reject) => {
+      const req = https.request(options, (res) => {
+        console.log('[makeApiRequest] Response status:', res.statusCode);
+        console.log('[makeApiRequest] Response headers:', JSON.stringify(res.headers));
+        
+        let data = '';
+        
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        
+        res.on('end', () => {
+          try {
+            console.log('[makeApiRequest] Response body length:', data.length);
+            console.log('[makeApiRequest] Response body preview:', data.substring(0, 200));
+            
+            const response = {
+              statusCode: res.statusCode,
+              headers: res.headers,
+              body: data
+            };
+            resolve(response);
+          } catch (error) {
+            console.error('[makeApiRequest] Error parsing response:', error);
+            reject(error);
+          }
+        });
+      });
+
+      req.on('error', (error) => {
+        console.error('[makeApiRequest] Request error:', {
+          message: error.message,
+          code: error.code,
+          stack: error.stack
+        });
+        reject(error);
+      });
+
+      if (body) {
+        const bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
+        console.log('[makeApiRequest] Request body:', bodyStr);
+        req.write(bodyStr);
+      }
+      
+      req.end();
+      console.log('[makeApiRequest] Request sent');
+    });
+  } catch (error) {
+    console.error('[makeApiRequest] ERROR:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack
+    });
+    throw error;
+  }
 }
 
 exports.handler = async (event) => {
-  console.log('BFF Request:', JSON.stringify(event, null, 2));
+  console.log('=== BFF Request Start ===');
+  console.log('Event:', JSON.stringify(event, null, 2));
   
   try {
     // Extract path and method from API Gateway event
@@ -141,17 +203,30 @@ exports.handler = async (event) => {
     const body = event.body;
     const headers = event.headers || {};
 
+    console.log('[handler] Extracted path:', path);
+    console.log('[handler] Extracted method:', method);
+    console.log('[handler] Headers:', JSON.stringify(headers));
+
     // Remove host and other headers that shouldn't be forwarded
     const forwardHeaders = { ...headers };
     delete forwardHeaders.host;
+    delete forwardHeaders.Host;
     delete forwardHeaders.authorization;
+    delete forwardHeaders.Authorization;
     delete forwardHeaders['x-api-key'];
+    delete forwardHeaders['X-Api-Key'];
+    
+    console.log('[handler] Forward headers:', JSON.stringify(forwardHeaders));
 
     // Make request to internal API
+    console.log('[handler] Calling internal API...');
     const response = await makeApiRequest(path, method, body, forwardHeaders);
+    
+    console.log('[handler] Internal API response status:', response.statusCode);
+    console.log('[handler] Internal API response body preview:', response.body.substring(0, 200));
 
     // Return response in API Gateway format
-    return {
+    const result = {
       statusCode: response.statusCode,
       headers: {
         'Content-Type': 'application/json',
@@ -161,8 +236,18 @@ exports.handler = async (event) => {
       },
       body: response.body
     };
+    
+    console.log('[handler] Returning status:', result.statusCode);
+    console.log('=== BFF Request End (Success) ===');
+    return result;
   } catch (error) {
-    console.error('BFF Error:', error);
+    console.error('=== BFF Request End (Error) ===');
+    console.error('[handler] ERROR:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack,
+      name: error.name
+    });
     
     return {
       statusCode: 500,
@@ -172,7 +257,8 @@ exports.handler = async (event) => {
       },
       body: JSON.stringify({
         error: 'Internal server error',
-        message: error.message
+        message: error.message,
+        type: error.name
       })
     };
   }
@@ -182,7 +268,8 @@ exports.handler = async (event) => {
       memorySize: 512,
       environment: {
         API_SECRET_ARN: this.apiSecret.secretArn,
-        NODE_ENV: 'production'
+        NODE_ENV: 'production',
+        AWS_NODEJS_CONNECTION_REUSE_ENABLED: '1'
       },
       description: 'Backend-for-Frontend proxy for RDS Dashboard'
     });

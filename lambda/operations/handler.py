@@ -9,32 +9,34 @@ Requirements: REQ-7 (Self-Service Operations for Non-Production)
 """
 
 import json
+import os
 import time
+import boto3
 from datetime import datetime
 from typing import Dict, Any, Optional
 from decimal import Decimal
 
-from shared.logger import get_logger
-from shared.aws_clients import get_rds_client, get_dynamodb_client
-from shared.config import get_config
+from shared import StructuredLogger
+from shared import AWSClients
+from shared import Config
 from shared.environment_classifier import EnvironmentClassifier
 
-logger = get_logger(__name__)
+logger = StructuredLogger("operations")
 
 
 class OperationsHandler:
     """Handle self-service RDS operations."""
     
-    ALLOWED_OPERATIONS = ['create_snapshot', 'reboot_instance', 'modify_backup_window']
+    ALLOWED_OPERATIONS = ['create_snapshot', 'reboot', 'reboot_instance', 'modify_backup_window']
     OPERATION_TIMEOUT = 300  # 5 minutes
     POLL_INTERVAL = 30  # 30 seconds
     
     def __init__(self):
         """Initialize operations handler."""
-        self.config = get_config()
-        self.dynamodb = get_dynamodb_client()
-        self.audit_table = self.config.get('audit_log_table', 'rds_audit_log')
-        self.inventory_table = self.config.get('inventory_table', 'rds_inventory')
+        self.config = Config.load()
+        self.dynamodb = AWSClients.get_dynamodb_resource()
+        self.audit_table = os.environ.get('AUDIT_LOG_TABLE', 'audit-log-prod')
+        self.inventory_table = os.environ.get('INVENTORY_TABLE', 'rds-inventory-prod')
         
         # Initialize environment classifier
         env_config = self.config.get('environment_classification', {})
@@ -54,7 +56,8 @@ class OperationsHandler:
             # Parse request body
             body = json.loads(event.get('body', '{}'))
             
-            operation = body.get('operation')
+            # Support both 'operation' and 'operation_type' for backwards compatibility
+            operation = body.get('operation') or body.get('operation_type')
             instance_id = body.get('instance_id')
             parameters = body.get('parameters', {})
             user_identity = event.get('requestContext', {}).get('identity', {})
@@ -221,7 +224,23 @@ class OperationsHandler:
         region = instance['region']
         
         # Get RDS client for target account/region
-        rds_client = get_rds_client(region, account_id)
+        # For same-account operations, don't assume role
+        current_account = os.environ.get('AWS_ACCOUNT_ID') or boto3.client('sts').get_caller_identity()['Account']
+        
+        if account_id == current_account:
+            # Same account - use direct client
+            rds_client = AWSClients.get_rds_client(region=region)
+        else:
+            # Cross-account - assume role
+            external_id = os.environ.get('EXTERNAL_ID', 'rds-dashboard-unique-id-12345')
+            role_name = os.environ.get('CROSS_ACCOUNT_ROLE_NAME', 'RDSDashboardCrossAccountRole')
+            
+            rds_client = AWSClients.get_rds_client(
+                region=region,
+                account_id=account_id,
+                role_name=role_name,
+                external_id=external_id
+            )
         
         start_time = time.time()
         
@@ -231,7 +250,7 @@ class OperationsHandler:
                     rds_client, instance_id, parameters
                 )
             
-            elif operation == 'reboot_instance':
+            elif operation in ['reboot', 'reboot_instance']:
                 result = self._reboot_instance(
                     rds_client, instance_id, parameters
                 )
@@ -348,7 +367,7 @@ class OperationsHandler:
                 logger.error(f"Error checking snapshot status: {str(e)}")
                 return 'error'
         
-        logger.warning(f"Snapshot {snapshot_id} timed out after {timeout}s")
+        logger.warn(f"Snapshot {snapshot_id} timed out after {timeout}s")
         return 'timeout'
     
     def _reboot_instance(
@@ -436,7 +455,7 @@ class OperationsHandler:
                 logger.error(f"Error checking instance status: {str(e)}")
                 return 'error'
         
-        logger.warning(f"Instance {instance_id} timed out after {timeout}s")
+        logger.warn(f"Instance {instance_id} timed out after {timeout}s")
         return 'timeout'
     
     def _modify_backup_window(

@@ -118,6 +118,22 @@ export interface OperationResult {
   completed_at?: string
 }
 
+export interface CloudOpsRequest {
+  instance_id: string
+  request_type: 'scaling' | 'parameter_change' | 'maintenance'
+  changes: Record<string, any>
+  requested_by?: string
+}
+
+export interface CloudOpsResponse {
+  request_id: string
+  instance_id: string
+  request_type: string
+  markdown_url: string
+  text_url: string
+  created_at: string
+}
+
 // API functions
 export const api = {
   // Instances
@@ -140,8 +156,8 @@ export const api = {
   },
 
   getInstance: async (instanceId: string) => {
-    const response = await apiClient.get<RDSInstance>(`/instances/${instanceId}`)
-    return response.data
+    const response = await apiClient.get<{ instance: RDSInstance }>(`/instances/${instanceId}`)
+    return response.data.instance
   },
 
   // Health
@@ -152,9 +168,10 @@ export const api = {
   },
 
   getAlerts: async (instanceId?: string) => {
-    const url = instanceId ? `/alerts/${instanceId}` : '/alerts'
+    // Use /health endpoint instead of /alerts (they're the same)
+    const url = instanceId ? `/health/${instanceId}` : '/health'
     const response = await apiClient.get<{ alerts: HealthAlert[] }>(url)
-    return response.data.alerts
+    return response.data.alerts || []
   },
 
   // Costs
@@ -163,24 +180,26 @@ export const api = {
     if (filters?.account) params.append('account', filters.account)
     if (filters?.region) params.append('region', filters.region)
     
-    const response = await apiClient.get<{ costs: CostData[] }>(
+    const response = await apiClient.get<{ costs?: CostData[]; total_cost?: number; message?: string }>(
       `/costs?${params.toString()}`
     )
-    return response.data.costs
+    // API returns {total_cost, costs: {}} but frontend expects array
+    // Return empty array if costs not available yet
+    return response.data.costs || []
   },
 
   getRecommendations: async () => {
     const response = await apiClient.get<{ recommendations: CostRecommendation[] }>(
-      '/costs/recommendations'
+      '/costs?action=recommendations'
     )
-    return response.data.recommendations
+    return response.data.recommendations || []
   },
 
   // Compliance
   getCompliance: async (instanceId?: string) => {
     const url = instanceId ? `/compliance/${instanceId}` : '/compliance'
-    const response = await apiClient.get<{ checks: ComplianceCheck[] }>(url)
-    return response.data.checks
+    const response = await apiClient.get<{ checks?: ComplianceCheck[]; message?: string }>(url)
+    return response.data.checks || []
   },
 
   // Operations
@@ -189,15 +208,17 @@ export const api = {
     return response.data
   },
 
-  generateCloudOpsRequest: async (data: {
-    instance_id: string
-    request_type: string
-    parameters: Record<string, any>
-  }) => {
-    const response = await apiClient.post<{ request_text: string; s3_path: string }>(
-      '/cloudops-request',
-      data
-    )
+  // CloudOps Requests
+  generateCloudOpsRequest: async (request: CloudOpsRequest) => {
+    const response = await apiClient.post<CloudOpsResponse>('/cloudops', request)
     return response.data
+  },
+
+  getCloudOpsHistory: async (instanceId?: string) => {
+    const url = instanceId 
+      ? `/cloudops/history?instance_id=${instanceId}`
+      : '/cloudops/history'
+    const response = await apiClient.get<{ requests: CloudOpsResponse[] }>(url)
+    return response.data.requests || []
   },
 }

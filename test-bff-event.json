@@ -1,0 +1,8 @@
+{
+  "path": "/instances/tb-pg-db1",
+  "httpMethod": "GET",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": null
+}

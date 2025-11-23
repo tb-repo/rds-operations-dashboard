@@ -182,6 +182,63 @@ export class IamStack extends cdk.Stack {
     cloudWatchPolicy.attachToRole(this.lambdaExecutionRole);
 
     // ========================================
+    // Policy: RDS Read Access
+    // ========================================
+    // Purpose: Discover and describe RDS instances in current account
+    // Requirements: REQ-1.1 (RDS discovery), REQ-1.2 (metadata extraction)
+    const rdsPolicy = new iam.Policy(this, 'RdsPolicy', {
+      policyName: `RDSDashboard-RDS-${environment}`,
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: [
+            'rds:DescribeDBInstances',
+            'rds:DescribeDBClusters',
+            'rds:ListTagsForResource',
+            'rds:DescribeDBSnapshots',
+            'rds:DescribeDBClusterSnapshots',
+          ],
+          resources: ['*'],
+        }),
+      ],
+    });
+    rdsPolicy.attachToRole(this.lambdaExecutionRole);
+
+    // ========================================
+    // Policy: RDS Operations (Write Access)
+    // ========================================
+    // Purpose: Execute self-service operations on RDS instances
+    // Requirements: REQ-7 (Self-Service Operations)
+    // Note: Operations are restricted to non-production instances via application logic
+    const rdsOperationsPolicy = new iam.Policy(this, 'RdsOperationsPolicy', {
+      policyName: `RDSDashboard-RDS-Operations-${environment}`,
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: [
+            // Snapshot operations
+            'rds:CreateDBSnapshot',
+            'rds:CreateDBClusterSnapshot',
+            'rds:DescribeDBSnapshots',
+            'rds:DescribeDBClusterSnapshots',
+            // Reboot operations
+            'rds:RebootDBInstance',
+            // Modify operations (for backup window, etc.)
+            'rds:ModifyDBInstance',
+            'rds:ModifyDBCluster',
+            // Start/Stop operations
+            'rds:StartDBInstance',
+            'rds:StopDBInstance',
+            'rds:StartDBCluster',
+            'rds:StopDBCluster',
+          ],
+          resources: ['*'],
+        }),
+      ],
+    });
+    rdsOperationsPolicy.attachToRole(this.lambdaExecutionRole);
+
+    // ========================================
     // Generate Cross-Account Role Template
     // ========================================
     // Purpose: CloudFormation template for target accounts to deploy

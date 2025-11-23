@@ -1,0 +1,48 @@
+{
+  "RDSDashboard-Data-prod": {
+    "MetricsCacheTableName": "metrics-cache-prod",
+    "ExportsOutputRefRdsInventoryTable0A985D663AE53E68": "rds-inventory-prod",
+    "AuditLogTableName": "audit-log-prod",
+    "ExportsOutputFnGetAttHealthAlertsTableF3A5D842Arn0E618BF6": "arn:aws:dynamodb:ap-southeast-1:876595225096:table/health-alerts-prod",
+    "DataBucketName": "rds-dashboard-data-876595225096-prod",
+    "CostSnapshotsTableName": "cost-snapshots-prod",
+    "ExportsOutputFnGetAttDataBucketE3889A50Arn98F8399F": "arn:aws:s3:::rds-dashboard-data-876595225096-prod",
+    "HealthAlertsTableName": "health-alerts-prod",
+    "ExportsOutputFnGetAttMetricsCacheTable8136CFD7ArnF414057D": "arn:aws:dynamodb:ap-southeast-1:876595225096:table/metrics-cache-prod",
+    "ExportsOutputRefMetricsCacheTable8136CFD756163610": "metrics-cache-prod",
+    "DataBucketArn": "arn:aws:s3:::rds-dashboard-data-876595225096-prod",
+    "ExportsOutputFnGetAttRdsInventoryTable0A985D66Arn4B0AA4D8": "arn:aws:dynamodb:ap-southeast-1:876595225096:table/rds-inventory-prod",
+    "RdsInventoryTableName": "rds-inventory-prod",
+    "ExportsOutputRefDataBucketE3889A50250F5285": "rds-dashboard-data-876595225096-prod",
+    "ExportsOutputRefAuditLogTable8B03E3C8EAC7CA55": "audit-log-prod",
+    "ExportsOutputFnGetAttAuditLogTable8B03E3C8Arn985A1088": "arn:aws:dynamodb:ap-southeast-1:876595225096:table/audit-log-prod",
+    "ExportsOutputRefHealthAlertsTableF3A5D842AFCC8B0D": "health-alerts-prod"
+  },
+  "RDSDashboard-IAM-prod": {
+    "LambdaExecutionRoleArn": "arn:aws:iam::876595225096:role/RDSDashboardLambdaRole-prod",
+    "ExternalId": "rds-dashboard-unique-id-12345",
+    "ExportsOutputFnGetAttLambdaExecutionRoleD5C26073ArnADAF6607": "arn:aws:iam::876595225096:role/RDSDashboardLambdaRole-prod",
+    "LambdaExecutionRoleName": "RDSDashboardLambdaRole-prod"
+  },
+  "RDSDashboard-Compute-prod": {
+    "CostAnalyzerFunctionName": "rds-cost-analyzer-prod",
+    "CloudOpsGeneratorFunctionArn": "arn:aws:lambda:ap-southeast-1:876595225096:function:rds-cloudops-generator-prod",
+    "ExportsOutputRefOperationsFunction878588957BDF15BD": "rds-operations-prod",
+    "HealthMonitorFunctionArn": "arn:aws:lambda:ap-southeast-1:876595225096:function:rds-health-monitor-prod",
+    "ExportsOutputFnGetAttDiscoveryFunctionC503C428Arn3F5FA272": "arn:aws:lambda:ap-southeast-1:876595225096:function:rds-discovery-prod",
+    "ExportsOutputRefDiscoveryFunctionC503C4284D8B9193": "rds-discovery-prod",
+    "CostAnalyzerFunctionArn": "arn:aws:lambda:ap-southeast-1:876595225096:function:rds-cost-analyzer-prod",
+    "ExportsOutputFnGetAttQueryHandlerFunctionC3EA4DCDArn80A174F3": "arn:aws:lambda:ap-southeast-1:876595225096:function:rds-query-handler-prod",
+    "ExportsOutputFnGetAttOperationsFunction87858895Arn54B64468": "arn:aws:lambda:ap-southeast-1:876595225096:function:rds-operations-prod",
+    "HealthMonitorFunctionName": "rds-health-monitor-prod",
+    "ExportsOutputRefHealthMonitorFunctionE81A641C5ACD9E13": "rds-health-monitor-prod",
+    "QueryHandlerFunctionArn": "arn:aws:lambda:ap-southeast-1:876595225096:function:rds-query-handler-prod",
+    "OperationsFunctionArn": "arn:aws:lambda:ap-southeast-1:876595225096:function:rds-operations-prod",
+    "ExportsOutputFnGetAttHealthMonitorFunctionE81A641CArnDED5C19E": "arn:aws:lambda:ap-southeast-1:876595225096:function:rds-health-monitor-prod",
+    "ExportsOutputRefCostAnalyzerFunctionFC0023DD81A94D5D": "rds-cost-analyzer-prod",
+    "ExportsOutputRefComplianceCheckerFunction7DC8F7A95E84CC9F": "rds-compliance-checker-prod",
+    "DiscoveryFunctionArn": "arn:aws:lambda:ap-southeast-1:876595225096:function:rds-discovery-prod",
+    "DiscoveryFunctionName": "rds-discovery-prod",
+    "ComplianceCheckerFunctionArn": "arn:aws:lambda:ap-southeast-1:876595225096:function:rds-compliance-checker-prod"
+  }
+}

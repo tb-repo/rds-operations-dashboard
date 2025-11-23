@@ -1,9 +1,10 @@
 interface StatusBadgeProps {
-  status: string
+  status?: string
 }
 
 export default function StatusBadge({ status }: StatusBadgeProps) {
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status?: string) => {
+    if (!status) return 'badge-info'
     const normalized = status.toLowerCase()
     if (normalized === 'available' || normalized === 'healthy' || normalized === 'compliant') {
       return 'badge-success'
@@ -19,7 +20,7 @@ export default function StatusBadge({ status }: StatusBadgeProps) {
 
   return (
     <span className={`badge ${getStatusColor(status)}`}>
-      {status}
+      {status || 'Unknown'}
     </span>
   )
 }

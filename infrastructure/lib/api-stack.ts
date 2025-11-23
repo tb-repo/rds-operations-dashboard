@@ -6,6 +6,7 @@ import { Construct } from 'constructs';
 export interface ApiStackProps extends cdk.StackProps {
   queryHandlerFunction: lambda.IFunction;
   operationsFunction: lambda.IFunction;
+  cloudOpsGeneratorFunction: lambda.IFunction;
 }
 
 export class ApiStack extends cdk.Stack {
@@ -19,6 +20,7 @@ export class ApiStack extends cdk.Stack {
     this.api = new apigateway.RestApi(this, 'RdsOpsApi', {
       restApiName: 'RDS Operations Dashboard API',
       description: 'API for RDS Operations Dashboard',
+      endpointTypes: [apigateway.EndpointType.REGIONAL],
       deployOptions: {
         stageName: 'prod',
         throttlingRateLimit: 100,
@@ -72,6 +74,7 @@ export class ApiStack extends cdk.Stack {
     this.createCostsEndpoints(props.queryHandlerFunction);
     this.createComplianceEndpoints(props.queryHandlerFunction);
     this.createOperationsEndpoints(props.operationsFunction, props.queryHandlerFunction);
+    this.createCloudOpsEndpoints(props.cloudOpsGeneratorFunction, props.queryHandlerFunction);
 
     // Outputs
     new cdk.CfnOutput(this, 'ApiUrl', {
@@ -183,6 +186,27 @@ export class ApiStack extends cdk.Stack {
         requestParameters: {
           'method.request.querystring.severity': false,
           'method.request.querystring.limit': false,
+        },
+      }
+    );
+
+    // GET /health/{instanceId} - Get health for specific instance
+    const instanceHealth = health.addResource('{instanceId}');
+    instanceHealth.addMethod(
+      'GET',
+      new apigateway.LambdaIntegration(queryHandler, {
+        proxy: true,
+        requestTemplates: {
+          'application/json': JSON.stringify({
+            action: 'get_instance_health',
+            instanceId: '$input.params(\'instanceId\')',
+          }),
+        },
+      }),
+      {
+        apiKeyRequired: true,
+        requestParameters: {
+          'method.request.path.instanceId': true,
         },
       }
     );
@@ -345,11 +369,11 @@ export class ApiStack extends cdk.Stack {
             contentType: 'application/json',
             schema: {
               type: apigateway.JsonSchemaType.OBJECT,
-              required: ['operation', 'instance_id'],
+              required: ['operation_type', 'instance_id'],
               properties: {
-                operation: {
+                operation_type: {
                   type: apigateway.JsonSchemaType.STRING,
-                  enum: ['create_snapshot', 'reboot_instance', 'modify_backup_window'],
+                  enum: ['create_snapshot', 'reboot', 'modify_backup_window'],
                 },
                 instance_id: {
                   type: apigateway.JsonSchemaType.STRING,
@@ -382,6 +406,74 @@ export class ApiStack extends cdk.Stack {
         requestParameters: {
           'method.request.querystring.instance_id': false,
           'method.request.querystring.operation': false,
+          'method.request.querystring.limit': false,
+        },
+      }
+    );
+  }
+
+  private createCloudOpsEndpoints(cloudOpsGenerator: lambda.IFunction, queryHandler: lambda.IFunction): void {
+    // /cloudops resource
+    const cloudops = this.api.root.addResource('cloudops');
+
+    // POST /cloudops - Generate CloudOps request
+    cloudops.addMethod(
+      'POST',
+      new apigateway.LambdaIntegration(cloudOpsGenerator, {
+        proxy: true,
+      }),
+      {
+        apiKeyRequired: true,
+        requestValidator: new apigateway.RequestValidator(this, 'CloudOpsValidator', {
+          restApi: this.api,
+          validateRequestBody: true,
+          validateRequestParameters: false,
+        }),
+        requestModels: {
+          'application/json': new apigateway.Model(this, 'CloudOpsModel', {
+            restApi: this.api,
+            contentType: 'application/json',
+            schema: {
+              type: apigateway.JsonSchemaType.OBJECT,
+              required: ['instance_id', 'request_type'],
+              properties: {
+                instance_id: {
+                  type: apigateway.JsonSchemaType.STRING,
+                },
+                request_type: {
+                  type: apigateway.JsonSchemaType.STRING,
+                  enum: ['scaling', 'parameter_change', 'maintenance'],
+                },
+                changes: {
+                  type: apigateway.JsonSchemaType.OBJECT,
+                },
+                requested_by: {
+                  type: apigateway.JsonSchemaType.STRING,
+                },
+              },
+            },
+          }),
+        },
+      }
+    );
+
+    // GET /cloudops/history - Get CloudOps request history
+    const history = cloudops.addResource('history');
+    history.addMethod(
+      'GET',
+      new apigateway.LambdaIntegration(queryHandler, {
+        proxy: true,
+        requestTemplates: {
+          'application/json': JSON.stringify({
+            action: 'get_cloudops_history',
+            queryStringParameters: '$input.params().querystring',
+          }),
+        },
+      }),
+      {
+        apiKeyRequired: true,
+        requestParameters: {
+          'method.request.querystring.instance_id': false,
           'method.request.querystring.limit': false,
         },
       }
