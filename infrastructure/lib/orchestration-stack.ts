@@ -26,7 +26,6 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { Construct } from 'constructs';
 
 export interface OrchestrationStackProps extends cdk.StackProps {
-  readonly environment: string;
   readonly discoveryFunction: lambda.IFunction;
   readonly healthMonitorFunction?: lambda.IFunction;
   readonly costAnalyzerFunction?: lambda.IFunction;
@@ -42,7 +41,7 @@ export class OrchestrationStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: OrchestrationStackProps) {
     super(scope, id, props);
 
-    const { environment, discoveryFunction, healthMonitorFunction,
+    const { discoveryFunction, healthMonitorFunction,
             costAnalyzerFunction, complianceCheckerFunction,
             discoverySchedule, healthMonitorSchedule } = props;
 
@@ -52,7 +51,7 @@ export class OrchestrationStack extends cdk.Stack {
     // Purpose: Automatically discover RDS instances across accounts/regions
     // Requirements: REQ-1.1 (automated discovery)
     this.discoveryRule = new events.Rule(this, 'DiscoveryScheduleRule', {
-      ruleName: `rds-discovery-schedule-${environment}`,
+      ruleName: 'rds-discovery-schedule',
       description: 'Triggers RDS discovery Lambda function hourly',
       schedule: events.Schedule.expression(discoverySchedule),
       enabled: true,
@@ -71,7 +70,7 @@ export class OrchestrationStack extends cdk.Stack {
     // Requirements: REQ-2.1 (health monitoring)
     if (healthMonitorFunction) {
       this.healthMonitorRule = new events.Rule(this, 'HealthMonitorScheduleRule', {
-        ruleName: `rds-health-monitor-schedule-${environment}`,
+        ruleName: 'rds-health-monitor-schedule',
         description: 'Triggers RDS health monitor Lambda function every 5 minutes',
         schedule: events.Schedule.expression(healthMonitorSchedule),
         enabled: true,
@@ -91,7 +90,7 @@ export class OrchestrationStack extends cdk.Stack {
     // Requirements: REQ-6.1 (compliance checking)
     if (complianceCheckerFunction) {
       const complianceRule = new events.Rule(this, 'ComplianceScheduleRule', {
-        ruleName: `rds-compliance-schedule-${environment}`,
+        ruleName: 'rds-compliance-schedule',
         description: 'Triggers RDS compliance checker Lambda function daily at 02:00 SGT',
         schedule: events.Schedule.cron({
           minute: '0',
@@ -116,7 +115,7 @@ export class OrchestrationStack extends cdk.Stack {
     // Requirements: REQ-4.1 (cost analysis)
     if (costAnalyzerFunction) {
       const costAnalyzerRule = new events.Rule(this, 'CostAnalyzerScheduleRule', {
-        ruleName: `rds-cost-analyzer-schedule-${environment}`,
+        ruleName: 'rds-cost-analyzer-schedule',
         description: 'Triggers RDS cost analyzer Lambda function daily at 03:00 SGT',
         schedule: events.Schedule.cron({
           minute: '0',
@@ -140,14 +139,14 @@ export class OrchestrationStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'DiscoveryRuleName', {
       value: this.discoveryRule.ruleName,
       description: 'EventBridge rule name for RDS discovery',
-      exportName: `${environment}-DiscoveryRuleName`,
+      exportName: 'DiscoveryRuleName',
     });
 
     if (this.healthMonitorRule) {
       new cdk.CfnOutput(this, 'HealthMonitorRuleName', {
         value: this.healthMonitorRule.ruleName,
         description: 'EventBridge rule name for health monitoring',
-        exportName: `${environment}-HealthMonitorRuleName`,
+        exportName: 'HealthMonitorRuleName',
       });
     }
 

@@ -1,16 +1,20 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
-import { Database, LayoutDashboard, DollarSign, Shield, RefreshCw } from 'lucide-react'
+import { Database, LayoutDashboard, DollarSign, Shield, RefreshCw, Users, LogOut } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
+import { useAuth } from '@/lib/auth/AuthContext'
+import PermissionGuard from './PermissionGuard'
 
 export default function Layout() {
   const location = useLocation()
   const queryClient = useQueryClient()
+  const { user, logout } = useAuth()
 
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
     { name: 'Instances', href: '/instances', icon: Database },
     { name: 'Costs', href: '/costs', icon: DollarSign },
     { name: 'Compliance', href: '/compliance', icon: Shield },
+    { name: 'Approvals', href: '/approvals', icon: Shield, permission: 'execute_operations' },
   ]
 
   const handleRefresh = () => {
@@ -29,13 +33,27 @@ export default function Layout() {
                 RDS Operations Dashboard
               </h1>
             </div>
-            <button
-              onClick={handleRefresh}
-              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
-            >
-              <RefreshCw className="h-4 w-4" />
-              Refresh
-            </button>
+            <div className="flex items-center gap-4">
+              {user && (
+                <div className="text-sm text-gray-600">
+                  {user.email}
+                </div>
+              )}
+              <button
+                onClick={handleRefresh}
+                className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Refresh
+              </button>
+              <button
+                onClick={logout}
+                className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+              >
+                <LogOut className="h-4 w-4" />
+                Logout
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -65,6 +83,24 @@ export default function Layout() {
                 </Link>
               )
             })}
+            
+            {/* User Management - Only visible for users with manage_users permission */}
+            <PermissionGuard permission="manage_users">
+              <Link
+                to="/users"
+                className={`
+                  flex items-center gap-2 px-3 py-4 text-sm font-medium border-b-2 transition-colors
+                  ${
+                    location.pathname === '/users'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
+                  }
+                `}
+              >
+                <Users className="h-4 w-4" />
+                Users
+              </Link>
+            </PermissionGuard>
           </div>
         </div>
       </nav>

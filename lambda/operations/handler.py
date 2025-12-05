@@ -5,7 +5,21 @@ RDS Operations Service Handler
 Provides self-service operations for non-production RDS instances.
 Supports snapshot creation, instance reboot, and backup window modification.
 
-Requirements: REQ-7 (Self-Service Operations for Non-Production)
+Requirements: REQ-7 (Self-Service Operations for Non-Production), REQ-5.1 (structured logging)
+
+
+Governance Metadata:
+{
+  "generated_by": "claude-3.5-sonnet",
+  "timestamp": "2025-12-02T14:33:09.245285+00:00",
+  "version": "1.1.0",
+  "policy_version": "v1.0.0",
+  "traceability": "REQ-9.1, REQ-9.2, REQ-9.3 → DESIGN-001 → TASK-9",
+  "review_status": "Pending",
+  "risk_level": "Level 2",
+  "reviewed_by": None,
+  "approved_by": None
+}
 """
 
 import json
@@ -17,6 +31,8 @@ from typing import Dict, Any, Optional
 from decimal import Decimal
 
 from shared import StructuredLogger
+from shared.structured_logger import get_logger
+from shared.correlation_middleware import with_correlation_id, CorrelationContext
 from shared import AWSClients
 from shared import Config
 from shared.environment_classifier import EnvironmentClassifier
@@ -27,7 +43,16 @@ logger = StructuredLogger("operations")
 class OperationsHandler:
     """Handle self-service RDS operations."""
     
-    ALLOWED_OPERATIONS = ['create_snapshot', 'reboot', 'reboot_instance', 'modify_backup_window']
+    ALLOWED_OPERATIONS = [
+        'create_snapshot', 
+        'reboot', 
+        'reboot_instance', 
+        'modify_backup_window',
+        'stop_instance',
+        'start_instance',
+        'enable_storage_autoscaling',
+        'modify_storage'
+    ]
     OPERATION_TIMEOUT = 300  # 5 minutes
     POLL_INTERVAL = 30  # 30 seconds
     
@@ -257,6 +282,26 @@ class OperationsHandler:
             
             elif operation == 'modify_backup_window':
                 result = self._modify_backup_window(
+                    rds_client, instance_id, parameters
+                )
+            
+            elif operation == 'stop_instance':
+                result = self._stop_instance(
+                    rds_client, instance_id, parameters
+                )
+            
+            elif operation == 'start_instance':
+                result = self._start_instance(
+                    rds_client, instance_id, parameters
+                )
+            
+            elif operation == 'enable_storage_autoscaling':
+                result = self._enable_storage_autoscaling(
+                    rds_client, instance_id, parameters
+                )
+            
+            elif operation == 'modify_storage':
+                result = self._modify_storage(
                     rds_client, instance_id, parameters
                 )
             
@@ -500,6 +545,233 @@ class OperationsHandler:
             )
         }
     
+    def _stop_instance(
+        self,
+        rds_client: Any,
+        instance_id: str,
+        parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Stop RDS instance.
+        
+        Args:
+            rds_client: RDS client
+            instance_id: RDS instance identifier
+            parameters: Stop parameters
+            
+        Returns:
+            dict: Stop result
+        """
+        snapshot_id = parameters.get('snapshot_id')
+        
+        logger.info(f"Stopping instance {instance_id}")
+        
+        # Stop instance
+        kwargs = {'DBInstanceIdentifier': instance_id}
+        if snapshot_id:
+            kwargs['DBSnapshotIdentifier'] = snapshot_id
+        
+        response = rds_client.stop_db_instance(**kwargs)
+        
+        instance = response['DBInstance']
+        
+        # Poll until instance is stopped or timeout
+        status = self._wait_for_instance_status(
+            rds_client, instance_id, 'stopped', self.OPERATION_TIMEOUT
+        )
+        
+        return {
+            'operation': 'stop_instance',
+            'instance_id': instance_id,
+            'status': status,
+            'snapshot_created': snapshot_id is not None,
+            'snapshot_id': snapshot_id
+        }
+    
+    def _start_instance(
+        self,
+        rds_client: Any,
+        instance_id: str,
+        parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Start RDS instance.
+        
+        Args:
+            rds_client: RDS client
+            instance_id: RDS instance identifier
+            parameters: Start parameters
+            
+        Returns:
+            dict: Start result
+        """
+        logger.info(f"Starting instance {instance_id}")
+        
+        # Start instance
+        response = rds_client.start_db_instance(
+            DBInstanceIdentifier=instance_id
+        )
+        
+        instance = response['DBInstance']
+        
+        # Poll until instance is available or timeout
+        status = self._wait_for_instance_available(
+            rds_client, instance_id, self.OPERATION_TIMEOUT
+        )
+        
+        return {
+            'operation': 'start_instance',
+            'instance_id': instance_id,
+            'status': status
+        }
+    
+    def _enable_storage_autoscaling(
+        self,
+        rds_client: Any,
+        instance_id: str,
+        parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Enable storage autoscaling for RDS instance.
+        
+        Args:
+            rds_client: RDS client
+            instance_id: RDS instance identifier
+            parameters: Autoscaling parameters
+            
+        Returns:
+            dict: Autoscaling configuration result
+        """
+        max_allocated_storage = parameters.get('max_allocated_storage')
+        apply_immediately = parameters.get('apply_immediately', True)
+        
+        if not max_allocated_storage:
+            raise ValueError("max_allocated_storage is required")
+        
+        logger.info(f"Enabling storage autoscaling for {instance_id} with max {max_allocated_storage} GB")
+        
+        # Enable autoscaling
+        response = rds_client.modify_db_instance(
+            DBInstanceIdentifier=instance_id,
+            MaxAllocatedStorage=int(max_allocated_storage),
+            ApplyImmediately=apply_immediately
+        )
+        
+        instance = response['DBInstance']
+        
+        return {
+            'operation': 'enable_storage_autoscaling',
+            'instance_id': instance_id,
+            'max_allocated_storage': max_allocated_storage,
+            'current_allocated_storage': instance.get('AllocatedStorage'),
+            'apply_immediately': apply_immediately,
+            'status': instance.get('DBInstanceStatus')
+        }
+    
+    def _modify_storage(
+        self,
+        rds_client: Any,
+        instance_id: str,
+        parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Modify storage configuration for RDS instance.
+        
+        Args:
+            rds_client: RDS client
+            instance_id: RDS instance identifier
+            parameters: Storage modification parameters
+            
+        Returns:
+            dict: Storage modification result
+        """
+        allocated_storage = parameters.get('allocated_storage')
+        storage_type = parameters.get('storage_type')
+        iops = parameters.get('iops')
+        apply_immediately = parameters.get('apply_immediately', True)
+        
+        logger.info(f"Modifying storage for {instance_id}")
+        
+        # Build modification parameters
+        modify_params = {
+            'DBInstanceIdentifier': instance_id,
+            'ApplyImmediately': apply_immediately
+        }
+        
+        if allocated_storage:
+            modify_params['AllocatedStorage'] = int(allocated_storage)
+        
+        if storage_type:
+            modify_params['StorageType'] = storage_type
+        
+        if iops:
+            modify_params['Iops'] = int(iops)
+        
+        # Modify storage
+        response = rds_client.modify_db_instance(**modify_params)
+        
+        instance = response['DBInstance']
+        
+        return {
+            'operation': 'modify_storage',
+            'instance_id': instance_id,
+            'allocated_storage': allocated_storage,
+            'storage_type': storage_type,
+            'iops': iops,
+            'apply_immediately': apply_immediately,
+            'status': instance.get('DBInstanceStatus'),
+            'pending_values': instance.get('PendingModifiedValues', {})
+        }
+    
+    def _wait_for_instance_status(
+        self,
+        rds_client: Any,
+        instance_id: str,
+        target_status: str,
+        timeout: int
+    ) -> str:
+        """
+        Wait for instance to reach target status.
+        
+        Args:
+            rds_client: RDS client
+            instance_id: Instance identifier
+            target_status: Target status to wait for
+            timeout: Timeout in seconds
+            
+        Returns:
+            str: Final instance status
+        """
+        start_time = time.time()
+        
+        while time.time() - start_time < timeout:
+            try:
+                response = rds_client.describe_db_instances(
+                    DBInstanceIdentifier=instance_id
+                )
+                
+                if response['DBInstances']:
+                    status = response['DBInstances'][0]['DBInstanceStatus']
+                    
+                    if status == target_status:
+                        logger.info(f"Instance {instance_id} reached status: {target_status}")
+                        return status
+                    
+                    if status in ['failed', 'deleted', 'incompatible-parameters']:
+                        logger.error(f"Instance {instance_id} failed: {status}")
+                        return status
+                    
+                    logger.info(f"Instance {instance_id} status: {status}")
+                
+                time.sleep(self.POLL_INTERVAL)
+                
+            except Exception as e:
+                logger.error(f"Error checking instance status: {str(e)}")
+                return 'error'
+        
+        logger.warn(f"Instance {instance_id} timed out after {timeout}s")
+        return 'timeout'
+    
     def _log_audit(
         self,
         operation: str,
@@ -569,6 +841,7 @@ class OperationsHandler:
         }
 
 
+@with_correlation_id
 def lambda_handler(event, context):
     """
     Lambda handler for operations service.

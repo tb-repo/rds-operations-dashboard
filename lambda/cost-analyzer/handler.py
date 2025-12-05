@@ -14,6 +14,20 @@ Purpose: Calculate and track RDS costs with optimization recommendations.
 Analyzes utilization patterns and generates right-sizing recommendations.
 
 Trigger: EventBridge scheduled rule (daily at 03:00 SGT)
+
+
+Governance Metadata:
+{
+  "generated_by": "claude-3.5-sonnet",
+  "timestamp": "2025-12-02T14:33:08.981067+00:00",
+  "version": "1.1.0",
+  "policy_version": "v1.0.0",
+  "traceability": "REQ-4.1, REQ-4.2, REQ-4.3, REQ-4.4, REQ-4.5 → DESIGN-001 → TASK-4",
+  "review_status": "Pending",
+  "risk_level": "Level 2",
+  "reviewed_by": None,
+  "approved_by": None
+}
 """
 
 import json
@@ -27,6 +41,8 @@ from typing import Dict, List, Any, Optional
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from shared import StructuredLogger
+from shared.structured_logger import get_logger
+from shared.correlation_middleware import with_correlation_id, CorrelationContext
 from shared import AWSClients
 from shared import Config
 
@@ -39,6 +55,7 @@ from reporting import CostReporter
 logger = StructuredLogger("cost-analyzer")
 
 
+@with_correlation_id
 def lambda_handler(event, context):
     """
     Main Lambda handler for cost analysis.

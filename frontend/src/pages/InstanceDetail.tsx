@@ -1,12 +1,14 @@
 import { useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-// import { Activity, HardDrive, Cpu, Database as DatabaseIcon } from 'lucide-react'
-import { api, OperationRequest } from '@/lib/api'
-import LoadingSpinner from '@/components/LoadingSpinner'
-import ErrorMessage from '@/components/ErrorMessage'
-import StatusBadge from '@/components/StatusBadge'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import { Cpu, Users } from 'lucide-react'
+import { api } from '../lib/api'
+import LoadingSpinner from '../components/LoadingSpinner'
+import ErrorMessage from '../components/ErrorMessage'
+import StatusBadge from '../components/StatusBadge'
+import PermissionGuard from '../components/PermissionGuard'
+import { OperationRequest } from '../lib/api'
 
 export default function InstanceDetail() {
   const { instanceId } = useParams<{ instanceId: string }>()
@@ -83,6 +85,22 @@ export default function InstanceDetail() {
           <p className="mt-1 text-sm text-gray-600">
             {instance.engine} {instance.engine_version} • {instance.instance_class}
           </p>
+          <div className="flex gap-3 mt-3">
+            <Link
+              to={`/instances/${instanceId}/compute`}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
+            >
+              <Cpu className="w-4 h-4" />
+              Compute Monitoring
+            </Link>
+            <Link
+              to={`/instances/${instanceId}/connections`}
+              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors"
+            >
+              <Users className="w-4 h-4" />
+              Connection Monitoring
+            </Link>
+          </div>
         </div>
         <StatusBadge status={instance.status} />
       </div>
@@ -186,32 +204,44 @@ export default function InstanceDetail() {
         </div>
       )}
 
-      {/* Operations */}
-      <div className="card">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Self-Service Operations</h2>
-        <div className="flex gap-4">
-          <select
-            value={selectedOperation}
-            onChange={(e) => setSelectedOperation(e.target.value)}
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Select an operation...</option>
-            <option value="create_snapshot">Create Snapshot</option>
-            <option value="reboot">Reboot Instance</option>
-            <option value="modify_backup_window">Modify Backup Window</option>
-          </select>
-          <button
-            onClick={handleOperation}
-            disabled={!selectedOperation || operationMutation.isPending}
-            className="btn-primary"
-          >
-            {operationMutation.isPending ? 'Executing...' : 'Execute'}
-          </button>
+      {/* Operations - Only visible for users with execute_operations permission */}
+      <PermissionGuard permission="execute_operations">
+        <div className="card">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Self-Service Operations</h2>
+          <div className="flex gap-4">
+            <select
+              value={selectedOperation}
+              onChange={(e) => setSelectedOperation(e.target.value)}
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Select an operation...</option>
+              <optgroup label="Instance Control">
+                <option value="start_instance">Start Instance</option>
+                <option value="stop_instance">Stop Instance</option>
+                <option value="reboot">Reboot Instance</option>
+              </optgroup>
+              <optgroup label="Backup & Snapshot">
+                <option value="create_snapshot">Create Snapshot</option>
+                <option value="modify_backup_window">Modify Backup Window</option>
+              </optgroup>
+              <optgroup label="Storage Management">
+                <option value="enable_storage_autoscaling">Enable Storage Autoscaling</option>
+                <option value="modify_storage">Modify Storage</option>
+              </optgroup>
+            </select>
+            <button
+              onClick={handleOperation}
+              disabled={!selectedOperation || operationMutation.isPending}
+              className="btn-primary"
+            >
+              {operationMutation.isPending ? 'Executing...' : 'Execute'}
+            </button>
+          </div>
+          <p className="mt-2 text-sm text-gray-600">
+            Note: Operations are only available for non-production instances
+          </p>
         </div>
-        <p className="mt-2 text-sm text-gray-600">
-          Note: Operations are only available for non-production instances
-        </p>
-      </div>
+      </PermissionGuard>
 
       {/* Tags */}
       {instance.tags && Object.keys(instance.tags).length > 0 && (

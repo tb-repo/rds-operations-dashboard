@@ -21,6 +21,9 @@ import { OrchestrationStack } from '../lib/orchestration-stack';
 import { ApiStack } from '../lib/api-stack';
 import { MonitoringStack } from '../lib/monitoring-stack';
 import { BffStack } from '../lib/bff-stack';
+import { AuthStack } from '../lib/auth-stack';
+import { WafStack } from '../lib/waf-stack';
+import { FrontendStack } from '../lib/frontend-stack';
 import { ConfigLoader } from '../../config/config-loader';
 
 // Load environment variables (optional, config file takes precedence)
@@ -31,13 +34,12 @@ const app = new cdk.App();
 // Load configuration from JSON file
 const config = ConfigLoader.load();
 
-// Environment configuration from config file
-const environment = config.deployment.environment;
+// Deployment configuration from config file
 const account = process.env.CDK_DEFAULT_ACCOUNT || config.deployment.management_account_id;
 const region = config.deployment.region;
 const externalId = config.cross_account.external_id;
 
-// Validate required environment variables
+// Validate required configuration
 if (!account) {
   throw new Error('AWS_ACCOUNT_ID or CDK_DEFAULT_ACCOUNT must be set');
 }
@@ -50,13 +52,11 @@ const env = {
 // ========================================
 // Data Stack (DynamoDB + S3)
 // ========================================
-const dataStack = new DataStack(app, `RDSDashboard-Data-${environment}`, {
+const dataStack = new DataStack(app, 'RDSDashboard-Data', {
   env,
-  environment,
   description: 'RDS Dashboard - Data Layer (DynamoDB tables and S3 buckets)',
   tags: {
     Project: 'RDSDashboard',
-    Environment: environment,
     ManagedBy: 'CDK',
   },
 });
@@ -64,19 +64,18 @@ const dataStack = new DataStack(app, `RDSDashboard-Data-${environment}`, {
 // ========================================
 // IAM Stack (Roles and Policies)
 // ========================================
-const iamStack = new IamStack(app, `RDSDashboard-IAM-${environment}`, {
+const iamStack = new IamStack(app, 'RDSDashboard-IAM', {
   env,
-  environment,
   externalId,
   rdsInventoryTable: dataStack.rdsInventoryTable,
   metricsCacheTable: dataStack.metricsCacheTable,
   healthAlertsTable: dataStack.healthAlertsTable,
   auditLogTable: dataStack.auditLogTable,
+  approvalsTable: dataStack.approvalsTable,
   dataBucket: dataStack.dataBucket,
   description: 'RDS Dashboard - IAM Layer (Lambda execution role and cross-account roles)',
   tags: {
     Project: 'RDSDashboard',
-    Environment: environment,
     ManagedBy: 'CDK',
   },
 });
@@ -91,16 +90,16 @@ iamStack.addDependency(dataStack);
 const targetAccounts = ConfigLoader.getEnabledAccounts(config);
 const targetRegions = ConfigLoader.getEnabledRegions(config);
 
-const snsTopicArn = `arn:aws:sns:${region}:${account}:rds-dashboard-alerts-${environment}`;
+const snsTopicArn = `arn:aws:sns:${region}:${account}:rds-dashboard-alerts`;
 
-const computeStack = new ComputeStack(app, `RDSDashboard-Compute-${environment}`, {
+const computeStack = new ComputeStack(app, 'RDSDashboard-Compute', {
   env,
-  environment,
   lambdaExecutionRole: iamStack.lambdaExecutionRole,
   rdsInventoryTable: dataStack.rdsInventoryTable,
   metricsCacheTable: dataStack.metricsCacheTable,
   healthAlertsTable: dataStack.healthAlertsTable,
   auditLogTable: dataStack.auditLogTable,
+  approvalsTable: dataStack.approvalsTable,
   dataBucket: dataStack.dataBucket,
   externalId,
   targetAccounts,
@@ -109,7 +108,6 @@ const computeStack = new ComputeStack(app, `RDSDashboard-Compute-${environment}`
   description: 'RDS Dashboard - Compute Layer (Lambda functions)',
   tags: {
     Project: 'RDSDashboard',
-    Environment: environment,
     ManagedBy: 'CDK',
   },
 });
@@ -120,9 +118,8 @@ computeStack.addDependency(iamStack);
 // ========================================
 // Orchestration Stack (EventBridge Rules)
 // ========================================
-const orchestrationStack = new OrchestrationStack(app, `RDSDashboard-Orchestration-${environment}`, {
+const orchestrationStack = new OrchestrationStack(app, 'RDSDashboard-Orchestration', {
   env,
-  environment,
   discoveryFunction: computeStack.discoveryFunction,
   healthMonitorFunction: computeStack.healthMonitorFunction,
   discoverySchedule: 'rate(1 hour)',  // Every hour
@@ -130,7 +127,6 @@ const orchestrationStack = new OrchestrationStack(app, `RDSDashboard-Orchestrati
   description: 'RDS Dashboard - Orchestration Layer (EventBridge scheduled rules)',
   tags: {
     Project: 'RDSDashboard',
-    Environment: environment,
     ManagedBy: 'CDK',
   },
 });
@@ -141,15 +137,16 @@ orchestrationStack.addDependency(computeStack);
 // ========================================
 // API Stack (API Gateway)
 // ========================================
-const apiStack = new ApiStack(app, `RDSDashboard-API-${environment}`, {
+const apiStack = new ApiStack(app, 'RDSDashboard-API', {
   env,
   queryHandlerFunction: computeStack.queryHandlerFunction,
   operationsFunction: computeStack.operationsFunction,
   cloudOpsGeneratorFunction: computeStack.cloudOpsGeneratorFunction,
+  monitoringFunction: computeStack.monitoringFunction,
+  approvalWorkflowFunction: computeStack.approvalWorkflowFunction,
   description: 'RDS Dashboard - API Layer (API Gateway and endpoints)',
   tags: {
     Project: 'RDSDashboard',
-    Environment: environment,
     ManagedBy: 'CDK',
   },
 });
@@ -160,7 +157,7 @@ apiStack.addDependency(computeStack);
 // ========================================
 // Monitoring Stack (CloudWatch Dashboard and Alarms)
 // ========================================
-const monitoringStack = new MonitoringStack(app, `RDSDashboard-Monitoring-${environment}`, {
+const monitoringStack = new MonitoringStack(app, 'RDSDashboard-Monitoring', {
   env,
   discoveryFunction: computeStack.discoveryFunction,
   healthMonitorFunction: computeStack.healthMonitorFunction,
@@ -171,7 +168,6 @@ const monitoringStack = new MonitoringStack(app, `RDSDashboard-Monitoring-${envi
   description: 'RDS Dashboard - Monitoring Layer (CloudWatch dashboards and alarms)',
   tags: {
     Project: 'RDSDashboard',
-    Environment: environment,
     ManagedBy: 'CDK',
   },
 });
@@ -180,22 +176,72 @@ const monitoringStack = new MonitoringStack(app, `RDSDashboard-Monitoring-${envi
 monitoringStack.addDependency(computeStack);
 
 // ========================================
-// BFF Stack (Backend-for-Frontend with Secrets Manager)
+// Auth Stack (Cognito User Pool)
 // ========================================
-const bffStack = new BffStack(app, `RDSDashboard-BFF-${environment}`, {
+const authStack = new AuthStack(app, 'RDSDashboard-Auth', {
   env,
-  internalApiUrl: apiStack.api.url,
-  apiKeyId: apiStack.apiKey.keyId,
-  description: 'RDS Dashboard - BFF Layer (Secure proxy with Secrets Manager)',
+  frontendDomain: process.env.FRONTEND_DOMAIN, // Optional: set for production
+  description: 'RDS Dashboard - Auth Layer (Cognito User Pool and groups)',
   tags: {
     Project: 'RDSDashboard',
-    Environment: environment,
     ManagedBy: 'CDK',
   },
 });
 
-// BFF stack depends on API stack
+// ========================================
+// BFF Stack (Backend-for-Frontend with Express Container)
+// ========================================
+const bffStack = new BffStack(app, 'RDSDashboard-BFF', {
+  env,
+  internalApiUrl: apiStack.api.url,
+  apiKeyId: apiStack.apiKey.keyId,
+  userPoolId: authStack.userPool.userPoolId,
+  userPoolClientId: authStack.userPoolClient.userPoolClientId,
+  frontendUrl: process.env.FRONTEND_URL || process.env.FRONTEND_DOMAIN,
+  description: 'RDS Dashboard - BFF Layer (Express container with JWT validation and RBAC)',
+  tags: {
+    Project: 'RDSDashboard',
+    ManagedBy: 'CDK',
+  },
+});
+
+// BFF stack depends on API and Auth stacks
 bffStack.addDependency(apiStack);
+bffStack.addDependency(authStack);
+
+// ========================================
+// WAF Stack (Web Application Firewall)
+// ========================================
+const wafStack = new WafStack(app, 'RDSDashboard-WAF', {
+  env,
+  apiGateway: apiStack.api,
+  rateLimit: 100, // 100 requests per 5 minutes per IP
+  blockedCountries: [], // Add country codes to block if needed (e.g., ['CN', 'RU'])
+  enableOWASPRules: true,
+  enableBotControl: true,
+  description: 'RDS Dashboard - WAF Layer (Web Application Firewall protection)',
+  tags: {
+    Project: 'RDSDashboard',
+    ManagedBy: 'CDK',
+  },
+});
+
+// WAF stack depends on API stack
+wafStack.addDependency(apiStack);
+
+// ========================================
+// Frontend Stack (S3 + CloudFront)
+// ========================================
+const frontendStack = new FrontendStack(app, 'RDSDashboard-Frontend', {
+  env,
+  customDomain: process.env.FRONTEND_DOMAIN,
+  certificateArn: process.env.CERTIFICATE_ARN,
+  description: 'RDS Dashboard - Frontend Layer (S3 bucket and CloudFront distribution)',
+  tags: {
+    Project: 'RDSDashboard',
+    ManagedBy: 'CDK',
+  },
+});
 
 // ========================================
 // Stack Tags

@@ -17,6 +17,20 @@ Design Decisions:
 - Batch metric requests: Single API call for multiple metrics
 - Optimized intervals: 5-min for critical metrics, 1-hour for standard
 - Parallel processing: Monitor multiple instances concurrently
+
+
+Governance Metadata:
+{
+  "generated_by": "claude-3.5-sonnet",
+  "timestamp": "2025-12-02T14:33:09.097156+00:00",
+  "version": "1.1.0",
+  "policy_version": "v1.0.0",
+  "traceability": "REQ-5.1, REQ-5.2, REQ-5.3 → DESIGN-001 → TASK-6",
+  "review_status": "Pending",
+  "risk_level": "Level 2",
+  "reviewed_by": None,
+  "approved_by": None
+}
 """
 
 import json
@@ -29,13 +43,16 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from shared import AWSClients, StructuredLogger, Config, log_execution
+from shared.structured_logger import get_logger
+from shared.correlation_middleware import with_correlation_id, CorrelationContext
 from cache_manager import MetricsCacheManager
 from alerting import AlertManager
 
 # Initialize logger
-logger = StructuredLogger('health-monitor-service')
+logger = get_logger('health-monitor-service', event=event, lambda_context=context)
 
 
+@with_correlation_id
 def lambda_handler(event, context):
     """
     Lambda handler for RDS health monitoring.
@@ -47,11 +64,9 @@ def lambda_handler(event, context):
     Returns:
         dict: Health monitoring results summary
     
-    Requirements: REQ-2.1 (health monitoring), REQ-8.1 (cost optimization)
+    Requirements: REQ-2.1 (health monitoring), REQ-8.1 (cost optimization), REQ-5.1 (structured logging)
     """
-    correlation_id = context.aws_request_id if context else 'local-test'
-    logger.set_correlation_id(correlation_id)
-    
+            
     logger.info('Health monitor service started',
                 function_name=context.function_name if context else 'local',
                 aws_request_id=correlation_id)
@@ -222,7 +237,7 @@ def monitor_instance(
     Returns:
         dict: Monitoring results for this instance
     
-    Requirements: REQ-2.1 (health monitoring), REQ-8.2 (caching)
+    Requirements: REQ-2.1 (health monitoring), REQ-8.2 (caching), REQ-5.1 (structured logging)
     """
     instance_id = instance['instance_id']
     account_id = instance['account_id']
@@ -278,7 +293,7 @@ def get_metrics_for_instance(instance: Dict[str, Any]) -> List[Dict[str, Any]]:
     Returns:
         list: Metric configurations
     
-    Requirements: REQ-2.1 (comprehensive monitoring)
+    Requirements: REQ-2.1 (comprehensive monitoring), REQ-5.1 (structured logging)
     """
     # Critical metrics (5-minute intervals)
     critical_metrics = [
@@ -320,7 +335,7 @@ def get_cached_metric(
     Returns:
         dict: Cached metric data or None
     
-    Requirements: REQ-8.2 (caching), REQ-8.3 (TTL)
+    Requirements: REQ-8.2 (caching), REQ-8.3 (TTL), REQ-5.1 (structured logging)
     """
     try:
         dynamodb = AWSClients.get_dynamodb_resource()
@@ -369,7 +384,7 @@ def fetch_and_cache_metric(
         metric_config: Metric configuration
         config: Application configuration
     
-    Requirements: REQ-2.1 (CloudWatch metrics), REQ-8.2 (caching)
+    Requirements: REQ-2.1 (CloudWatch metrics), REQ-8.2 (caching), REQ-5.1 (structured logging)
     """
     instance_id = instance['instance_id']
     account_id = instance['account_id']
@@ -461,7 +476,7 @@ def store_metric_in_cache(
         unit: Metric unit
         config: Application configuration
     
-    Requirements: REQ-8.2 (caching), REQ-8.3 (TTL)
+    Requirements: REQ-8.2 (caching), REQ-8.3 (TTL), REQ-5.1 (structured logging)
     """
     try:
         dynamodb = AWSClients.get_dynamodb_resource()

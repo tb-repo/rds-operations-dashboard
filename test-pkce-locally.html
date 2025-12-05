@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PKCE Test</title>
+</head>
+<body>
+    <h1>PKCE Code Verifier/Challenge Test</h1>
+    <button onclick="testPKCE()">Generate and Test PKCE</button>
+    <pre id="output"></pre>
+
+    <script>
+        function base64UrlEncode(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary)
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=/g, '');
+        }
+
+        function generateCodeVerifier() {
+            // Generate 32 random bytes (256 bits)
+            const array = new Uint8Array(32);
+            crypto.getRandomValues(array);
+            
+            // Convert to base64url (URL-safe base64)
+            // This will produce a 43-character string from 32 bytes
+            return base64UrlEncode(array.buffer);
+        }
+
+        async function generateCodeChallenge(verifier) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(verifier);
+            const digest = await crypto.subtle.digest('SHA-256', data);
+            return base64UrlEncode(digest);
+        }
+
+        async function testPKCE() {
+            const output = document.getElementById('output');
+            output.textContent = 'Generating PKCE parameters...\n\n';
+
+            // Generate code verifier
+            const verifier = generateCodeVerifier();
+            output.textContent += `Code Verifier:\n${verifier}\n`;
+            output.textContent += `Length: ${verifier.length}\n\n`;
+
+            // Generate code challenge
+            const challenge = await generateCodeChallenge(verifier);
+            output.textContent += `Code Challenge:\n${challenge}\n`;
+            output.textContent += `Length: ${challenge.length}\n\n`;
+
+            // Verify round-trip
+            const challenge2 = await generateCodeChallenge(verifier);
+            output.textContent += `Verification (regenerate challenge):\n`;
+            output.textContent += `Match: ${challenge === challenge2}\n\n`;
+
+            // Test with known values (from OAuth 2.0 RFC 7636 example)
+            const testVerifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+            const expectedChallenge = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
+            const actualChallenge = await generateCodeChallenge(testVerifier);
+            
+            output.textContent += `RFC 7636 Test Vector:\n`;
+            output.textContent += `Test Verifier: ${testVerifier}\n`;
+            output.textContent += `Expected Challenge: ${expectedChallenge}\n`;
+            output.textContent += `Actual Challenge: ${actualChallenge}\n`;
+            output.textContent += `Match: ${expectedChallenge === actualChallenge}\n`;
+        }
+    </script>
+</body>
+</html>

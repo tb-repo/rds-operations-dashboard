@@ -451,3 +451,105 @@ Start-Sleep -Seconds 5; $apiKey = aws apigateway get-api-key --api-key r5oxfieb6
 aws rds describe-db-instances --region ap-southeast-1
 
 Compress-Archive -Path *.py -DestinationPath ../discovery-lambda.zip -Force
+
+PS C:\Users\thiagarajan.b\OneDrive - IDP Education Ltd\D drive files\IDP\Personal (1)\My-Kiro-Projects> aws cognito-idp admin-list-groups-for-user --user-pool-id ap-southeast-1_aqKHXYWLu --username admin@example.com --region ap-southeast-1
+
+An error occurred (ResourceNotFoundException) when calling the AdminListGroupsForUser operation: User pool ap-southeast-1_aqKHXYWLu does not exist.
+PS C:\Users\thiagarajan.b\OneDrive - IDP Education Ltd\D drive files\IDP\Personal (1)\My-Kiro-Projects> aws cloudformation describe-stacks --stack-name RDSOperationsDashboard-Auth --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" --output text --region ap-southeast-1
+
+An error occurred (ValidationError) when calling the DescribeStacks operation: Stack with id RDSOperationsDashboard-Auth does not exist
+PS C:\Users\thiagarajan.b\OneDrive - IDP Education Ltd\D drive files\IDP\Personal (1)\My-Kiro-Projects> aws cloudformation list-stacks --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE --query "StackSummaries[?contains(StackName, 'Auth')].StackName" --output text --region ap-southeast-1
+RDSDashboard-Auth
+
+PS C:\Users\thiagarajan.b\OneDrive - IDP Education Ltd\D drive files\IDP\Personal (1)\My-Kiro-Projects> aws cloudformation describe-stacks --stack-name RDSDashboard-Auth --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue" --output text --region ap-southeast-1
+ap-southeast-1_4tyxh4qJe
+
+PS C:\Users\thiagarajan.b\OneDrive - IDP Education Ltd\D drive files\IDP\Personal (1)\My-Kiro-Projects> aws cognito-idp admin-list-groups-for-user --user-pool-id ap-southeast-1_4tyxh4qJe --username admin@example.com --region ap-southeast-1
+{
+    "Groups": [
+        {
+            "GroupName": "Admin",
+            "UserPoolId": "ap-southeast-1_4tyxh4qJe",
+            "Description": "Administrators with full system access including user management",
+            "Precedence": 1,
+            "LastModifiedDate": "2025-11-23T18:15:37.728000+05:30",
+            "CreationDate": "2025-11-23T18:15:37.728000+05:30"
+        }
+    ]
+}
+
+PS C:\Users\thiagarajan.b\OneDrive - IDP Education Ltd\D drive files\IDP\Personal (1)\My-Kiro-Projects> aws logs tail /aws/lambda/RDSDashboard-BFF --since 5m --follow false --region ap-southeast-1 | Select-Object -Last 50
+
+Unknown options: false
+PS C:\Users\thiagarajan.b\OneDrive - IDP Education Ltd\D drive files\IDP\Personal (1)\My-Kiro-Projects> aws logs tail /aws/lambda/RDSDashboard-BFF --since 5m --region ap-southeast-1 2>&1 | Select-Object -Last 100
+aws : 
+At line:1 char:1
++ aws logs tail /aws/lambda/RDSDashboard-BFF --since 5m --region ap-sou ...  
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~      
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException    
+    + FullyQualifiedErrorId : NativeCommandError
+
+An error occurred (ResourceNotFoundException) when calling the
+FilterLogEvents operation: The specified log group does not exist.
+PS C:\Users\thiagarajan.b\OneDrive - IDP Education Ltd\D drive files\IDP\Personal (1)\My-Kiro-Projects> aws logs describe-log-groups --log-group-name-prefix "/aws/lambda/RDS" --query "logGroups[*].logGroupName" --output text --region ap-southeast-1
+PS C:\Users\thiagarajan.b\OneDrive - IDP Education Ltd\D drive files\IDP\Personal (1)\My-Kiro-Projects> aws cloudformation describe-stacks --stack-name RDSDashboard-BFF --query "Stacks[0].Outputs" --region ap-southeast-1
+[
+    {
+        "OutputKey": "ApiSecretArn",
+        "OutputValue": "arn:aws:secretsmanager:ap-southeast-1:876595225096:secret:rds-dashboard-api-key-ouux8u",
+        "Description": "API Secret ARN in Secrets Manager",
+        "ExportName": "ApiSecretArn"
+    },
+    {
+        "OutputKey": "BffApiUrl",
+        "OutputValue": "https://144nff7etd.execute-api.ap-southeast-1.amazonaws.com/prod/",
+        "Description": "BFF API Gateway URL",
+        "ExportName": "BffApiUrl"
+    },
+    {
+        "OutputKey": "BffApiId",
+        "OutputValue": "144nff7etd",
+        "Description": "BFF API Gateway ID",
+        "ExportName": "BffApiId"
+    },
+    {
+        "OutputKey": "BffApiEndpoint413D959F",
+        "OutputValue": "https://144nff7etd.execute-api.ap-southeast-1.amazonaws.com/prod/"
+    }
+]
+
+PS C:\Users\thiagarajan.b\OneDrive - IDP Education Ltd\D drive files\IDP\Personal (1)\My-Kiro-Projects> aws lambda list-functions --query "Functions[?contains(FunctionName, 'BFF') || contains(FunctionName, 'Bff')].FunctionName" --output text --region ap-southeast-1
+PS C:\Users\thiagarajan.b\OneDrive - IDP Education Ltd\D drive files\IDP\Personal (1)\My-Kiro-Projects> aws cloudformation describe-stack-resources --stack-name RDSDashboard-BFF --query "StackResources[?ResourceType=='AWS::Lambda::Function'].PhysicalResourceId" --output text --region ap-southeast-1
+rds-dashboard-bff
+
+PS C:\Users\thiagarajan.b\OneDrive - IDP Education Ltd\D drive files\IDP\Personal (1)\My-Kiro-Projects> aws logs tail /aws/lambda/rds-dashboard-bff --since 10m --region ap-southeast-1 2>&1 | Select-Object -Last 150
+PS C:\Users\thiagarajan.b\OneDrive - IDP Education Ltd\D drive files\IDP\Personal (1)\My-Kiro-Projects> aws apigateway get-stages --rest-api-id 144nff7etd
+ --region ap-southeast-1 --query "item[0].methodSettings" 2>&1
+{
+    "*/*": {
+        "metricsEnabled": true,
+        "loggingLevel": "INFO",
+        "dataTraceEnabled": true,
+        "throttlingBurstLimit": 2000,
+        "throttlingRateLimit": 1000.0,
+        "cachingEnabled": false,
+        "cacheTtlInSeconds": 300,
+        "cacheDataEncrypted": false,
+        "requireAuthorizationForCacheControl": true,
+        "unauthorizedCacheControlHeaderStrategy": "SUCCEED_WITH_RESPONSE_HEADER"
+    }
+}
+
+PS C:\Users\thiagarajan.b\OneDrive - IDP Education Ltd\D drive files\IDP\Personal (1)\My-Kiro-Projects> aws logs describe-log-groups --log-group-name-prefix "API-Gateway-Execution-Logs_144nff7etd" --query "logGroups[*].logGroupName" --output text --region ap-southeast-1
+API-Gateway-Execution-Logs_144nff7etd/prod
+
+PS C:\Users\thiagarajan.b\OneDrive - IDP Education Ltd\D drive files\IDP\Personal (1)\My-Kiro-Projects> aws logs tail "API-Gateway-Execution-Logs_144nff7etd/prod" --since 10m --region ap-southeast-1 2>&1 | Select-Object -Last 200  
+PS C:\Users\thiagarajan.b\OneDrive - IDP Education Ltd\D drive files\IDP\Personal (1)\My-Kiro-Projects> aws apigateway get-rest-api --rest-api-id 144nff7etd --region ap-southeast-1 --query "policy"
+null
+
+PS C:\Users\thiagarajan.b\OneDrive - IDP Education Ltd\D drive files\IDP\Personal (1)\My-Kiro-Projects> aws apigateway get-authorizers --rest-api-id 144nff7etd --region ap-southeast-1
+{
+    "items": []
+}
+
+PS C:\Users\thiagarajan.b\OneDrive - IDP Education Ltd\D drive files\IDP\Personal (1)\My-Kiro-Projects>

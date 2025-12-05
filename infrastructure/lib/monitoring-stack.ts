@@ -13,6 +13,8 @@ export interface MonitoringStackProps extends cdk.StackProps {
   complianceCheckerFunction: lambda.IFunction;
   operationsFunction: lambda.IFunction;
   alertEmail: string;
+  apiGatewayName?: string;
+  dynamoDbTableNames?: string[];
 }
 
 export class MonitoringStack extends cdk.Stack {
@@ -47,6 +49,11 @@ export class MonitoringStack extends cdk.Stack {
     
     this.createDashboardWidgets(props);
 
+    // Create DynamoDB alarms if table names provided
+    if (props.dynamoDbTableNames && props.dynamoDbTableNames.length > 0) {
+      this.createDynamoDbAlarms(props.dynamoDbTableNames);
+    }
+
     // Outputs
     new cdk.CfnOutput(this, 'AlarmTopicArn', {
       value: this.alarmTopic.topicArn,
@@ -56,6 +63,70 @@ export class MonitoringStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'DashboardUrl', {
       value: `https://console.aws.amazon.com/cloudwatch/home?region=${this.region}#dashboards:name=${this.dashboard.dashboardName}`,
       description: 'CloudWatch Dashboard URL',
+    });
+  }
+
+  private createDynamoDbAlarms(tableNames: string[]): void {
+    // Create throttling alarm for each table (REQ-5.5: DynamoDB throttling)
+    tableNames.forEach((tableName, index) => {
+      const throttleAlarm = new cloudwatch.Alarm(this, `DynamoDbThrottle${index}`, {
+        metric: new cloudwatch.Metric({
+          namespace: 'AWS/DynamoDB',
+          metricName: 'UserErrors',
+          dimensionsMap: {
+            TableName: tableName,
+          },
+          statistic: 'Sum',
+          period: cdk.Duration.minutes(5),
+        }),
+        threshold: 1,
+        evaluationPeriods: 1,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        alarmDescription: `DynamoDB table ${tableName} is experiencing throttling`,
+        alarmName: `RDS-DynamoDB-Throttle-${tableName}`,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      });
+      throttleAlarm.addAlarmAction(new cloudwatch_actions.SnsAction(this.alarmTopic));
+
+      // High read capacity alarm
+      const highReadCapacity = new cloudwatch.Alarm(this, `DynamoDbHighRead${index}`, {
+        metric: new cloudwatch.Metric({
+          namespace: 'AWS/DynamoDB',
+          metricName: 'ConsumedReadCapacityUnits',
+          dimensionsMap: {
+            TableName: tableName,
+          },
+          statistic: 'Sum',
+          period: cdk.Duration.minutes(5),
+        }),
+        threshold: 80, // 80% of provisioned capacity (adjust based on actual provisioning)
+        evaluationPeriods: 2,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        alarmDescription: `DynamoDB table ${tableName} read capacity is high`,
+        alarmName: `RDS-DynamoDB-HighRead-${tableName}`,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      });
+      highReadCapacity.addAlarmAction(new cloudwatch_actions.SnsAction(this.alarmTopic));
+
+      // High write capacity alarm
+      const highWriteCapacity = new cloudwatch.Alarm(this, `DynamoDbHighWrite${index}`, {
+        metric: new cloudwatch.Metric({
+          namespace: 'AWS/DynamoDB',
+          metricName: 'ConsumedWriteCapacityUnits',
+          dimensionsMap: {
+            TableName: tableName,
+          },
+          statistic: 'Sum',
+          period: cdk.Duration.minutes(5),
+        }),
+        threshold: 80, // 80% of provisioned capacity (adjust based on actual provisioning)
+        evaluationPeriods: 2,
+        comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        alarmDescription: `DynamoDB table ${tableName} write capacity is high`,
+        alarmName: `RDS-DynamoDB-HighWrite-${tableName}`,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      });
+      highWriteCapacity.addAlarmAction(new cloudwatch_actions.SnsAction(this.alarmTopic));
     });
   }
 
@@ -223,6 +294,68 @@ export class MonitoringStack extends cdk.Stack {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
     opsErrors.addAlarmAction(new cloudwatch_actions.SnsAction(this.alarmTopic));
+
+    // Error Rate Alarm (REQ-5.5: error rate > 5% for 5 minutes)
+    const errorRate = new cloudwatch.MathExpression({
+      expression: '(errors / invocations) * 100',
+      usingMetrics: {
+        errors: operationsFunction.metricErrors({
+          period: cdk.Duration.minutes(5),
+          statistic: 'Sum',
+        }),
+        invocations: operationsFunction.metricInvocations({
+          period: cdk.Duration.minutes(5),
+          statistic: 'Sum',
+        }),
+      },
+      period: cdk.Duration.minutes(5),
+    });
+
+    const highErrorRate = new cloudwatch.Alarm(this, 'HighOperationsErrorRate', {
+      metric: errorRate,
+      threshold: 5,
+      evaluationPeriods: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      alarmDescription: 'Operations error rate exceeds 5% for 5 minutes',
+      alarmName: 'RDS-Operations-HighErrorRate',
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    highErrorRate.addAlarmAction(new cloudwatch_actions.SnsAction(this.alarmTopic));
+
+    // P99 Latency Alarm (REQ-5.5: P99 latency > 3 seconds)
+    const p99Latency = new cloudwatch.Alarm(this, 'HighOperationsP99Latency', {
+      metric: operationsFunction.metricDuration({
+        period: cdk.Duration.minutes(5),
+        statistic: 'p99',
+      }),
+      threshold: 3000, // 3 seconds in milliseconds
+      evaluationPeriods: 2,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      alarmDescription: 'Operations P99 latency exceeds 3 seconds',
+      alarmName: 'RDS-Operations-HighP99Latency',
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    p99Latency.addAlarmAction(new cloudwatch_actions.SnsAction(this.alarmTopic));
+
+    // Concurrent Executions Alarm (REQ-5.5: > 80% of reserved concurrent executions)
+    const concurrentExecutions = new cloudwatch.Alarm(this, 'HighConcurrentExecutions', {
+      metric: new cloudwatch.Metric({
+        namespace: 'AWS/Lambda',
+        metricName: 'ConcurrentExecutions',
+        dimensionsMap: {
+          FunctionName: operationsFunction.functionName,
+        },
+        statistic: 'Maximum',
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 800, // 80% of 1000 (default account limit)
+      evaluationPeriods: 2,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      alarmDescription: 'Lambda concurrent executions exceed 80% of limit',
+      alarmName: 'RDS-Operations-HighConcurrency',
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    concurrentExecutions.addAlarmAction(new cloudwatch_actions.SnsAction(this.alarmTopic));
 
     // Operation Success Rate (Custom Metric)
     const successRate = new cloudwatch.Metric({
@@ -470,5 +603,177 @@ export class MonitoringStack extends cdk.Stack {
         height: 6,
       })
     );
+
+    // Row 8: API Gateway Metrics (if provided)
+    if (props.apiGatewayName) {
+      this.dashboard.addWidgets(
+        new cloudwatch.TextWidget({
+          markdown: '## API Gateway Metrics',
+          width: 24,
+          height: 1,
+        })
+      );
+
+      this.dashboard.addWidgets(
+        new cloudwatch.GraphWidget({
+          title: 'API Gateway Requests',
+          left: [
+            new cloudwatch.Metric({
+              namespace: 'AWS/ApiGateway',
+              metricName: 'Count',
+              dimensionsMap: {
+                ApiName: props.apiGatewayName,
+              },
+              statistic: 'Sum',
+              period: cdk.Duration.minutes(5),
+              label: 'Total Requests',
+            }),
+          ],
+          width: 12,
+          height: 6,
+        }),
+        new cloudwatch.GraphWidget({
+          title: 'API Gateway Latency',
+          left: [
+            new cloudwatch.Metric({
+              namespace: 'AWS/ApiGateway',
+              metricName: 'Latency',
+              dimensionsMap: {
+                ApiName: props.apiGatewayName,
+              },
+              statistic: 'Average',
+              period: cdk.Duration.minutes(5),
+              label: 'Average Latency',
+              color: '#1f77b4',
+            }),
+            new cloudwatch.Metric({
+              namespace: 'AWS/ApiGateway',
+              metricName: 'Latency',
+              dimensionsMap: {
+                ApiName: props.apiGatewayName,
+              },
+              statistic: 'p99',
+              period: cdk.Duration.minutes(5),
+              label: 'P99 Latency',
+              color: '#ff7f0e',
+            }),
+          ],
+          width: 12,
+          height: 6,
+        })
+      );
+
+      this.dashboard.addWidgets(
+        new cloudwatch.GraphWidget({
+          title: 'API Gateway 4XX Errors',
+          left: [
+            new cloudwatch.Metric({
+              namespace: 'AWS/ApiGateway',
+              metricName: '4XXError',
+              dimensionsMap: {
+                ApiName: props.apiGatewayName,
+              },
+              statistic: 'Sum',
+              period: cdk.Duration.minutes(5),
+              color: '#ff7f0e',
+            }),
+          ],
+          width: 12,
+          height: 6,
+        }),
+        new cloudwatch.GraphWidget({
+          title: 'API Gateway 5XX Errors',
+          left: [
+            new cloudwatch.Metric({
+              namespace: 'AWS/ApiGateway',
+              metricName: '5XXError',
+              dimensionsMap: {
+                ApiName: props.apiGatewayName,
+              },
+              statistic: 'Sum',
+              period: cdk.Duration.minutes(5),
+              color: '#d62728',
+            }),
+          ],
+          width: 12,
+          height: 6,
+        })
+      );
+    }
+
+    // Row 9: DynamoDB Metrics (if provided)
+    if (props.dynamoDbTableNames && props.dynamoDbTableNames.length > 0) {
+      this.dashboard.addWidgets(
+        new cloudwatch.TextWidget({
+          markdown: '## DynamoDB Metrics',
+          width: 24,
+          height: 1,
+        })
+      );
+
+      // Create metrics for each table
+      const readCapacityMetrics = props.dynamoDbTableNames.map(tableName =>
+        new cloudwatch.Metric({
+          namespace: 'AWS/DynamoDB',
+          metricName: 'ConsumedReadCapacityUnits',
+          dimensionsMap: {
+            TableName: tableName,
+          },
+          statistic: 'Sum',
+          period: cdk.Duration.minutes(5),
+          label: tableName,
+        })
+      );
+
+      const writeCapacityMetrics = props.dynamoDbTableNames.map(tableName =>
+        new cloudwatch.Metric({
+          namespace: 'AWS/DynamoDB',
+          metricName: 'ConsumedWriteCapacityUnits',
+          dimensionsMap: {
+            TableName: tableName,
+          },
+          statistic: 'Sum',
+          period: cdk.Duration.minutes(5),
+          label: tableName,
+        })
+      );
+
+      const throttleMetrics = props.dynamoDbTableNames.map(tableName =>
+        new cloudwatch.Metric({
+          namespace: 'AWS/DynamoDB',
+          metricName: 'UserErrors',
+          dimensionsMap: {
+            TableName: tableName,
+          },
+          statistic: 'Sum',
+          period: cdk.Duration.minutes(5),
+          label: tableName,
+        })
+      );
+
+      this.dashboard.addWidgets(
+        new cloudwatch.GraphWidget({
+          title: 'DynamoDB Read Capacity',
+          left: readCapacityMetrics,
+          width: 12,
+          height: 6,
+        }),
+        new cloudwatch.GraphWidget({
+          title: 'DynamoDB Write Capacity',
+          left: writeCapacityMetrics,
+          width: 12,
+          height: 6,
+        })
+      );
+
+      this.dashboard.addWidgets(
+        new cloudwatch.GraphWidget({
+          title: 'DynamoDB Throttles',
+          left: throttleMetrics,
+          width: 24,
+          height: 6,
+        })
+      );
+    }
   }
 }

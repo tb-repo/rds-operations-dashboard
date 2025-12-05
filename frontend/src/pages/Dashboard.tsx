@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
-import { Database, AlertTriangle, DollarSign, Shield } from 'lucide-react'
+import { Database, AlertTriangle, DollarSign, Shield, RefreshCw } from 'lucide-react'
 import { api } from '@/lib/api'
+import { useAuth } from '@/lib/auth/AuthContext'
+import PermissionGuard from '@/components/PermissionGuard'
 import StatCard from '@/components/StatCard'
 import LoadingSpinner from '@/components/LoadingSpinner'
 import ErrorMessage from '@/components/ErrorMessage'
@@ -8,32 +10,63 @@ import StatusBadge from '@/components/StatusBadge'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 
 export default function Dashboard() {
-  const { data: instances, isLoading: instancesLoading, error: instancesError } = useQuery({
+  const { user } = useAuth()
+  const { 
+    data: instances, 
+    isLoading: instancesLoading, 
+    error: instancesError,
+    refetch: refetchInstances 
+  } = useQuery({
     queryKey: ['instances'],
     queryFn: () => api.getInstances(),
   })
 
-  const { data: alerts, isLoading: alertsLoading } = useQuery({
+  const { 
+    data: alerts, 
+    isLoading: alertsLoading,
+    refetch: refetchAlerts 
+  } = useQuery({
     queryKey: ['alerts'],
     queryFn: () => api.getAlerts(),
   })
 
-  const { data: costs, isLoading: costsLoading } = useQuery({
+  const { 
+    data: costs, 
+    isLoading: costsLoading,
+    refetch: refetchCosts 
+  } = useQuery({
     queryKey: ['costs'],
     queryFn: () => api.getCosts(),
   })
 
-  const { data: compliance, isLoading: complianceLoading } = useQuery({
+  const { 
+    data: compliance, 
+    isLoading: complianceLoading,
+    refetch: refetchCompliance 
+  } = useQuery({
     queryKey: ['compliance'],
     queryFn: () => api.getCompliance(),
   })
+
+  const handleRefreshAll = () => {
+    refetchInstances()
+    refetchAlerts()
+    refetchCosts()
+    refetchCompliance()
+  }
 
   if (instancesLoading || alertsLoading || costsLoading || complianceLoading) {
     return <LoadingSpinner size="lg" />
   }
 
   if (instancesError) {
-    return <ErrorMessage message="Failed to load dashboard data" />
+    return (
+      <ErrorMessage 
+        message="Failed to load dashboard data" 
+        error={instancesError}
+        onRetry={handleRefreshAll}
+      />
+    )
   }
 
   // Calculate stats
@@ -66,9 +99,47 @@ export default function Dashboard() {
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
 
+  const handleTriggerDiscovery = async () => {
+    // This would trigger the discovery process
+    console.log('Triggering discovery...')
+    // TODO: Implement discovery trigger API call
+  }
+
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Dashboard Overview</h1>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Dashboard Overview</h1>
+          {user && (
+            <p className="text-sm text-gray-600 mt-1">
+              Welcome back, {user.email} ({user.groups.join(', ')})
+            </p>
+          )}
+        </div>
+        
+        <div className="flex items-center gap-3">
+          {/* Refresh Button */}
+          <button
+            onClick={handleRefreshAll}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+            title="Refresh dashboard data"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Refresh
+          </button>
+          
+          {/* Trigger Discovery Button - Only for users with trigger_discovery permission */}
+          <PermissionGuard permission="trigger_discovery">
+            <button
+              onClick={handleTriggerDiscovery}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Trigger Discovery
+            </button>
+          </PermissionGuard>
+        </div>
+      </div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

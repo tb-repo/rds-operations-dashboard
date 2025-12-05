@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PKCE Round-Trip Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .success { color: green; }
+        .error { color: red; }
+        pre { background: #f4f4f4; padding: 10px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h1>PKCE Round-Trip Test</h1>
+    <button onclick="testPKCERoundTrip()">Test PKCE Flow</button>
+    <div id="output"></div>
+
+    <script>
+        function base64UrlEncode(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary)
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=/g, '');
+        }
+
+        function generateCodeVerifier() {
+            const array = new Uint8Array(32);
+            crypto.getRandomValues(array);
+            return base64UrlEncode(array.buffer);
+        }
+
+        async function generateCodeChallenge(verifier) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(verifier);
+            const digest = await crypto.subtle.digest('SHA-256', data);
+            return base64UrlEncode(digest);
+        }
+
+        function generateRandomString(length) {
+            const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+            const randomValues = new Uint8Array(length);
+            crypto.getRandomValues(randomValues);
+            return Array.from(randomValues)
+                .map((v) => charset[v % charset.length])
+                .join('');
+        }
+
+        async function testPKCERoundTrip() {
+            const output = document.getElementById('output');
+            output.innerHTML = '<h2>Testing PKCE Round-Trip...</h2>';
+
+            try {
+                // Step 1: Generate code verifier
+                const verifier = generateCodeVerifier();
+                output.innerHTML += `<h3>Step 1: Generate Code Verifier</h3>`;
+                output.innerHTML += `<pre>Verifier: ${verifier}\nLength: ${verifier.length}</pre>`;
+
+                // Step 2: Generate code challenge
+                const challenge = await generateCodeChallenge(verifier);
+                output.innerHTML += `<h3>Step 2: Generate Code Challenge</h3>`;
+                output.innerHTML += `<pre>Challenge: ${challenge}\nLength: ${challenge.length}</pre>`;
+
+                // Step 3: Simulate storing in state parameter
+                const stateData = {
+                    verifier: verifier,
+                    nonce: generateRandomString(16)
+                };
+                const state = btoa(JSON.stringify(stateData));
+                output.innerHTML += `<h3>Step 3: Store in State Parameter</h3>`;
+                output.innerHTML += `<pre>State: ${state.substring(0, 50)}...\nLength: ${state.length}</pre>`;
+
+                // Step 4: Simulate retrieving from state parameter
+                const retrievedStateData = JSON.parse(atob(state));
+                const retrievedVerifier = retrievedStateData.verifier;
+                output.innerHTML += `<h3>Step 4: Retrieve from State Parameter</h3>`;
+                output.innerHTML += `<pre>Retrieved Verifier: ${retrievedVerifier}\nLength: ${retrievedVerifier.length}</pre>`;
+
+                // Step 5: Verify round-trip
+                const match = verifier === retrievedVerifier;
+                output.innerHTML += `<h3>Step 5: Verify Round-Trip</h3>`;
+                output.innerHTML += `<pre class="${match ? 'success' : 'error'}">Match: ${match ? '✓ SUCCESS' : '✗ FAILED'}</pre>`;
+
+                // Step 6: Regenerate challenge from retrieved verifier
+                const challenge2 = await generateCodeChallenge(retrievedVerifier);
+                const challengeMatch = challenge === challenge2;
+                output.innerHTML += `<h3>Step 6: Verify Challenge Regeneration</h3>`;
+                output.innerHTML += `<pre class="${challengeMatch ? 'success' : 'error'}">Challenge Match: ${challengeMatch ? '✓ SUCCESS' : '✗ FAILED'}</pre>`;
+
+                // Step 7: Test with RFC 7636 example
+                output.innerHTML += `<h3>Step 7: RFC 7636 Test Vector</h3>`;
+                const testVerifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+                const expectedChallenge = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
+                const actualChallenge = await generateCodeChallenge(testVerifier);
+                const rfcMatch = expectedChallenge === actualChallenge;
+                output.innerHTML += `<pre class="${rfcMatch ? 'success' : 'error'}">RFC Test: ${rfcMatch ? '✓ SUCCESS' : '✗ FAILED'}\nExpected: ${expectedChallenge}\nActual: ${actualChallenge}</pre>`;
+
+                if (match && challengeMatch && rfcMatch) {
+                    output.innerHTML += `<h2 class="success">✓ All Tests Passed!</h2>`;
+                    output.innerHTML += `<p>The PKCE implementation is correct. The issue must be elsewhere.</p>`;
+                } else {
+                    output.innerHTML += `<h2 class="error">✗ Some Tests Failed</h2>`;
+                    output.innerHTML += `<p>There's an issue with the PKCE implementation.</p>`;
+                }
+
+            } catch (error) {
+                output.innerHTML += `<h2 class="error">Error: ${error.message}</h2>`;
+                output.innerHTML += `<pre>${error.stack}</pre>`;
+            }
+        }
+    </script>
+</body>
+</html>

@@ -31,7 +31,6 @@ export interface DashboardConfig {
   last_updated: string;
   
   deployment: {
-    environment: string;
     region: string;
     management_account_id: string;
   };
@@ -130,10 +129,6 @@ export class ConfigLoader {
    */
   private static validateConfig(config: DashboardConfig): void {
     // Check required fields
-    if (!config.deployment?.environment) {
-      throw new Error('Missing required field: deployment.environment');
-    }
-    
     if (!config.deployment?.region) {
       throw new Error('Missing required field: deployment.region');
     }
@@ -162,7 +157,7 @@ export class ConfigLoader {
     });
     
     console.log('✓ Configuration validated successfully');
-    console.log(`  Environment: ${config.deployment.environment}`);
+    console.log(`  Region: ${config.deployment.region}`);
     console.log(`  Enabled Accounts: ${enabledAccounts.length}`);
     console.log(`  Enabled Regions: ${enabledRegions.length}`);
   }

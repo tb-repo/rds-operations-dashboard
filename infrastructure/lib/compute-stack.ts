@@ -21,12 +21,12 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 
 export interface ComputeStackProps extends cdk.StackProps {
-  readonly environment: string;
   readonly lambdaExecutionRole: iam.IRole;
   readonly rdsInventoryTable: dynamodb.ITable;
   readonly metricsCacheTable: dynamodb.ITable;
   readonly healthAlertsTable: dynamodb.ITable;
   readonly auditLogTable: dynamodb.ITable;
+  readonly approvalsTable: dynamodb.ITable;
   readonly dataBucket: s3.IBucket;
   readonly externalId: string;
   readonly targetAccounts: string[];
@@ -42,19 +42,21 @@ export class ComputeStack extends cdk.Stack {
   public readonly complianceCheckerFunction: lambda.Function;
   public readonly operationsFunction: lambda.Function;
   public readonly cloudOpsGeneratorFunction: lambda.Function;
+  public readonly monitoringFunction: lambda.Function;
+  public readonly approvalWorkflowFunction: lambda.Function;
 
   constructor(scope: Construct, id: string, props: ComputeStackProps) {
     super(scope, id, props);
 
-    const { environment, lambdaExecutionRole, rdsInventoryTable, metricsCacheTable,
-            healthAlertsTable, auditLogTable, dataBucket, externalId,
+    const { lambdaExecutionRole, rdsInventoryTable, metricsCacheTable,
+            healthAlertsTable, auditLogTable, approvalsTable, dataBucket, externalId,
             targetAccounts, targetRegions, snsTopicArn } = props;
 
     // ========================================
     // Lambda Function: RDS Discovery
     // ========================================
     this.discoveryFunction = new lambda.Function(this, 'DiscoveryFunction', {
-      functionName: `rds-discovery-${environment}`,
+      functionName: 'rds-discovery',
       runtime: lambda.Runtime.PYTHON_3_11,
       handler: 'handler.lambda_handler',
       code: lambda.Code.fromAsset('../lambda/discovery'),
@@ -62,7 +64,6 @@ export class ComputeStack extends cdk.Stack {
       timeout: cdk.Duration.minutes(15),
       memorySize: 512,
       environment: {
-        ENVIRONMENT: environment,
         INVENTORY_TABLE: rdsInventoryTable.tableName,
         METRICS_CACHE_TABLE: metricsCacheTable.tableName,
         HEALTH_ALERTS_TABLE: healthAlertsTable.tableName,
@@ -85,7 +86,7 @@ export class ComputeStack extends cdk.Stack {
     // Lambda Function: Health Monitor
     // ========================================
     this.healthMonitorFunction = new lambda.Function(this, 'HealthMonitorFunction', {
-      functionName: `rds-health-monitor-${environment}`,
+      functionName: 'rds-health-monitor',
       runtime: lambda.Runtime.PYTHON_3_11,
       handler: 'handler.lambda_handler',
       code: lambda.Code.fromAsset('../lambda/health-monitor'),
@@ -93,7 +94,6 @@ export class ComputeStack extends cdk.Stack {
       timeout: cdk.Duration.minutes(15),
       memorySize: 512,
       environment: {
-        ENVIRONMENT: environment,
         INVENTORY_TABLE: rdsInventoryTable.tableName,
         METRICS_CACHE_TABLE: metricsCacheTable.tableName,
         HEALTH_ALERTS_TABLE: healthAlertsTable.tableName,
@@ -116,7 +116,7 @@ export class ComputeStack extends cdk.Stack {
     // Lambda Function: Cost Analyzer
     // ========================================
     this.costAnalyzerFunction = new lambda.Function(this, 'CostAnalyzerFunction', {
-      functionName: `rds-cost-analyzer-${environment}`,
+      functionName: 'rds-cost-analyzer',
       runtime: lambda.Runtime.PYTHON_3_11,
       handler: 'handler.lambda_handler',
       code: lambda.Code.fromAsset('../lambda/cost-analyzer'),
@@ -124,7 +124,6 @@ export class ComputeStack extends cdk.Stack {
       timeout: cdk.Duration.minutes(15),
       memorySize: 1024,  // Higher memory for cost calculations
       environment: {
-        ENVIRONMENT: environment,
         INVENTORY_TABLE: rdsInventoryTable.tableName,
         METRICS_CACHE_TABLE: metricsCacheTable.tableName,
         HEALTH_ALERTS_TABLE: healthAlertsTable.tableName,
@@ -145,7 +144,7 @@ export class ComputeStack extends cdk.Stack {
     // Lambda Function: Query Handler
     // ========================================
     this.queryHandlerFunction = new lambda.Function(this, 'QueryHandlerFunction', {
-      functionName: `rds-query-handler-${environment}`,
+      functionName: 'rds-query-handler',
       runtime: lambda.Runtime.PYTHON_3_11,
       handler: 'handler.lambda_handler',
       code: lambda.Code.fromAsset('../lambda/query-handler'),
@@ -153,7 +152,6 @@ export class ComputeStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(30),
       memorySize: 512,
       environment: {
-        ENVIRONMENT: environment,
         INVENTORY_TABLE: rdsInventoryTable.tableName,
         METRICS_CACHE_TABLE: metricsCacheTable.tableName,
         HEALTH_ALERTS_TABLE: healthAlertsTable.tableName,
@@ -169,7 +167,7 @@ export class ComputeStack extends cdk.Stack {
     // Lambda Function: Compliance Checker
     // ========================================
     this.complianceCheckerFunction = new lambda.Function(this, 'ComplianceCheckerFunction', {
-      functionName: `rds-compliance-checker-${environment}`,
+      functionName: 'rds-compliance-checker',
       runtime: lambda.Runtime.PYTHON_3_11,
       handler: 'handler.lambda_handler',
       code: lambda.Code.fromAsset('../lambda/compliance-checker'),
@@ -177,7 +175,6 @@ export class ComputeStack extends cdk.Stack {
       timeout: cdk.Duration.minutes(15),
       memorySize: 512,
       environment: {
-        ENVIRONMENT: environment,
         INVENTORY_TABLE: rdsInventoryTable.tableName,
         METRICS_CACHE_TABLE: metricsCacheTable.tableName,
         HEALTH_ALERTS_TABLE: healthAlertsTable.tableName,
@@ -198,7 +195,7 @@ export class ComputeStack extends cdk.Stack {
     // Lambda Function: Operations
     // ========================================
     this.operationsFunction = new lambda.Function(this, 'OperationsFunction', {
-      functionName: `rds-operations-${environment}`,
+      functionName: 'rds-operations',
       runtime: lambda.Runtime.PYTHON_3_11,
       handler: 'handler.lambda_handler',
       code: lambda.Code.fromAsset('../lambda/operations'),
@@ -206,7 +203,6 @@ export class ComputeStack extends cdk.Stack {
       timeout: cdk.Duration.minutes(5),
       memorySize: 512,
       environment: {
-        ENVIRONMENT: environment,
         INVENTORY_TABLE: rdsInventoryTable.tableName,
         METRICS_CACHE_TABLE: metricsCacheTable.tableName,
         HEALTH_ALERTS_TABLE: healthAlertsTable.tableName,
@@ -225,7 +221,7 @@ export class ComputeStack extends cdk.Stack {
     // Lambda Function: CloudOps Generator
     // ========================================
     this.cloudOpsGeneratorFunction = new lambda.Function(this, 'CloudOpsGeneratorFunction', {
-      functionName: `rds-cloudops-generator-${environment}`,
+      functionName: 'rds-cloudops-generator',
       runtime: lambda.Runtime.PYTHON_3_11,
       handler: 'handler.lambda_handler',
       code: lambda.Code.fromAsset('../lambda/cloudops-generator'),
@@ -233,7 +229,6 @@ export class ComputeStack extends cdk.Stack {
       timeout: cdk.Duration.minutes(5),
       memorySize: 512,
       environment: {
-        ENVIRONMENT: environment,
         INVENTORY_TABLE: rdsInventoryTable.tableName,
         METRICS_CACHE_TABLE: metricsCacheTable.tableName,
         HEALTH_ALERTS_TABLE: healthAlertsTable.tableName,
@@ -246,66 +241,107 @@ export class ComputeStack extends cdk.Stack {
     });
 
     // ========================================
+    // Lambda Function: Monitoring Service
+    // ========================================
+    this.monitoringFunction = new lambda.Function(this, 'MonitoringFunction', {
+      functionName: 'rds-monitoring',
+      runtime: lambda.Runtime.PYTHON_3_11,
+      handler: 'handler.lambda_handler',
+      code: lambda.Code.fromAsset('../lambda/monitoring'),
+      role: lambdaExecutionRole,
+      timeout: cdk.Duration.minutes(5),
+      memorySize: 512,
+      environment: {
+        EXTERNAL_ID: externalId,
+        CROSS_ACCOUNT_ROLE_NAME: 'RDSDashboardCrossAccountRole',
+        CLOUDWATCH_NAMESPACE: 'RDSDashboard',
+        LOG_LEVEL: 'INFO'
+      },
+      description: 'Fetches CloudWatch metrics for RDS instances',
+    });
+
+    // ========================================
+    // Lambda Function: Approval Workflow Service
+    // ========================================
+    this.approvalWorkflowFunction = new lambda.Function(this, 'ApprovalWorkflowFunction', {
+      functionName: 'rds-approval-workflow',
+      runtime: lambda.Runtime.PYTHON_3_11,
+      handler: 'handler.lambda_handler',
+      code: lambda.Code.fromAsset('../lambda/approval-workflow'),
+      role: lambdaExecutionRole,
+      timeout: cdk.Duration.minutes(5),
+      memorySize: 512,
+      environment: {
+        APPROVALS_TABLE: approvalsTable.tableName,
+        AUDIT_LOG_TABLE: auditLogTable.tableName,
+        SNS_TOPIC_ARN: snsTopicArn,
+        CLOUDWATCH_NAMESPACE: 'RDSDashboard',
+        LOG_LEVEL: 'INFO'
+      },
+      description: 'Manages approval workflow for high-risk RDS operations',
+    });
+
+    // ========================================
     // CloudFormation Outputs
     // ========================================
     new cdk.CfnOutput(this, 'DiscoveryFunctionArn', {
       value: this.discoveryFunction.functionArn,
       description: 'ARN of RDS Discovery Lambda function',
-      exportName: `${environment}-DiscoveryFunctionArn`,
+      exportName: 'DiscoveryFunctionArn',
     });
 
     new cdk.CfnOutput(this, 'DiscoveryFunctionName', {
       value: this.discoveryFunction.functionName,
       description: 'Name of RDS Discovery Lambda function',
-      exportName: `${environment}-DiscoveryFunctionName`,
+      exportName: 'DiscoveryFunctionName',
     });
 
     new cdk.CfnOutput(this, 'HealthMonitorFunctionArn', {
       value: this.healthMonitorFunction.functionArn,
       description: 'ARN of RDS Health Monitor Lambda function',
-      exportName: `${environment}-HealthMonitorFunctionArn`,
+      exportName: 'HealthMonitorFunctionArn',
     });
 
     new cdk.CfnOutput(this, 'HealthMonitorFunctionName', {
       value: this.healthMonitorFunction.functionName,
       description: 'Name of RDS Health Monitor Lambda function',
-      exportName: `${environment}-HealthMonitorFunctionName`,
+      exportName: 'HealthMonitorFunctionName',
     });
 
     new cdk.CfnOutput(this, 'CostAnalyzerFunctionArn', {
       value: this.costAnalyzerFunction.functionArn,
       description: 'ARN of RDS Cost Analyzer Lambda function',
-      exportName: `${environment}-CostAnalyzerFunctionArn`,
+      exportName: 'CostAnalyzerFunctionArn',
     });
 
     new cdk.CfnOutput(this, 'CostAnalyzerFunctionName', {
       value: this.costAnalyzerFunction.functionName,
       description: 'Name of RDS Cost Analyzer Lambda function',
-      exportName: `${environment}-CostAnalyzerFunctionName`,
+      exportName: 'CostAnalyzerFunctionName',
     });
 
     new cdk.CfnOutput(this, 'QueryHandlerFunctionArn', {
       value: this.queryHandlerFunction.functionArn,
       description: 'ARN of Query Handler Lambda function',
-      exportName: `${environment}-QueryHandlerFunctionArn`,
+      exportName: 'QueryHandlerFunctionArn',
     });
 
     new cdk.CfnOutput(this, 'ComplianceCheckerFunctionArn', {
       value: this.complianceCheckerFunction.functionArn,
       description: 'ARN of Compliance Checker Lambda function',
-      exportName: `${environment}-ComplianceCheckerFunctionArn`,
+      exportName: 'ComplianceCheckerFunctionArn',
     });
 
     new cdk.CfnOutput(this, 'OperationsFunctionArn', {
       value: this.operationsFunction.functionArn,
       description: 'ARN of Operations Lambda function',
-      exportName: `${environment}-OperationsFunctionArn`,
+      exportName: 'OperationsFunctionArn',
     });
 
     new cdk.CfnOutput(this, 'CloudOpsGeneratorFunctionArn', {
       value: this.cloudOpsGeneratorFunction.functionArn,
       description: 'ARN of CloudOps Generator Lambda function',
-      exportName: `${environment}-CloudOpsGeneratorFunctionArn`,
+      exportName: 'CloudOpsGeneratorFunctionArn',
     });
   }
 }

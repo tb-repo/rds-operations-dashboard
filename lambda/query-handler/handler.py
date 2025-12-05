@@ -5,7 +5,21 @@ Query Handler Lambda
 Unified query handler for API Gateway GET endpoints.
 Handles filtering, pagination, and data retrieval from DynamoDB.
 
-Requirements: REQ-3.1, REQ-3.2, REQ-3.3, REQ-10.1
+Requirements: REQ-3.1, REQ-3.2, REQ-3.3, REQ-10.1, REQ-5.1 (structured logging)
+
+
+Governance Metadata:
+{
+  "generated_by": "claude-3.5-sonnet",
+  "timestamp": "2025-12-02T14:33:09.199559+00:00",
+  "version": "1.1.0",
+  "policy_version": "v1.0.0",
+  "traceability": "REQ-8.1, REQ-8.2, REQ-8.3 → DESIGN-001 → TASK-8",
+  "review_status": "Pending",
+  "risk_level": "Level 2",
+  "reviewed_by": None,
+  "approved_by": None
+}
 """
 
 import json
@@ -18,6 +32,8 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from shared import StructuredLogger, AWSClients, Config
+from shared.structured_logger import get_logger
+from shared.correlation_middleware import with_correlation_id, CorrelationContext
 
 # Initialize logger
 logger = None  # Will be initialized in handler with Lambda context
@@ -648,6 +664,7 @@ class QueryHandler:
         }
 
 
+@with_correlation_id
 def lambda_handler(event, context):
     """
     Lambda handler for query requests.

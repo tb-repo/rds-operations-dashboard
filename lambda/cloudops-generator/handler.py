@@ -5,7 +5,21 @@ CloudOps Request Generator Lambda
 Generates pre-filled CloudOps request templates for production RDS changes.
 Loads templates from S3, fills with instance data, and saves to S3.
 
-Requirements: REQ-5.1, REQ-5.2, REQ-5.3, REQ-5.4, REQ-5.5
+Requirements: REQ-5.1, REQ-5.2, REQ-5.3, REQ-5.4, REQ-5.5, REQ-5.1 (structured logging)
+
+
+Governance Metadata:
+{
+  "generated_by": "claude-3.5-sonnet",
+  "timestamp": "2025-12-02T14:33:09.160488+00:00",
+  "version": "1.1.0",
+  "policy_version": "v1.0.0",
+  "traceability": "REQ-7.1, REQ-7.2, REQ-7.3 → DESIGN-001 → TASK-7",
+  "review_status": "Pending",
+  "risk_level": "Level 2",
+  "reviewed_by": None,
+  "approved_by": None
+}
 """
 
 import json
@@ -122,7 +136,7 @@ class CloudOpsRequestGenerator:
         """
         Validate request parameters comprehensively.
         
-        Requirements: REQ-5.3 - Validate all required fields before submission
+        Requirements: REQ-5.3 - Validate all required fields before submission, REQ-5.1 (structured logging)
         """
         # Basic validation
         if not instance_id:
@@ -281,7 +295,7 @@ class CloudOpsRequestGenerator:
         """
         Generate filled request from template.
         
-        Requirements: REQ-5.2, REQ-5.4 - Pre-fill instance details and compliance status
+        Requirements: REQ-5.2, REQ-5.4 - Pre-fill instance details and compliance status, REQ-5.1 (structured logging)
         """
         timestamp = datetime.utcnow()
         request_id = f'{instance.get("instance_id")}-{request_type}-{timestamp.strftime("%Y%m%d-%H%M%S")}'
@@ -515,7 +529,7 @@ class CloudOpsRequestGenerator:
         """
         Convert markdown to plain text format.
         
-        Requirements: REQ-5.5 - Generate formatted output suitable for ticketing systems
+        Requirements: REQ-5.5 - Generate formatted output suitable for ticketing systems, REQ-5.1 (structured logging)
         """
         # Simple markdown to plain text conversion
         text = markdown
@@ -560,7 +574,7 @@ class CloudOpsRequestGenerator:
         """
         Save request to S3 in both Markdown and plain text formats.
         
-        Requirements: REQ-5.5 - Save generated request for reference
+        Requirements: REQ-5.5 - Save generated request for reference, REQ-5.1 (structured logging)
         """
         try:
             timestamp = datetime.utcnow().strftime('%Y%m%d-%H%M%S')
@@ -618,7 +632,7 @@ class CloudOpsRequestGenerator:
         """
         Log request generation to audit trail.
         
-        Requirements: REQ-5.5, REQ-7.5 - Log all operations with details
+        Requirements: REQ-5.5, REQ-7.5 - Log all operations with details, REQ-5.1 (structured logging)
         """
         try:
             table = self.dynamodb.Table(self.audit_log_table)
@@ -676,6 +690,11 @@ class CloudOpsRequestGenerator:
         }
 
 
+from shared.structured_logger import get_logger
+from shared.correlation_middleware import with_correlation_id, CorrelationContext
+
+
+@with_correlation_id
 def lambda_handler(event, context):
     """
     Lambda handler for CloudOps request generation.

@@ -6,6 +6,14 @@
 
 The system uses **AWS resource-level tags** (not local code tags) to identify the environment type of each RDS instance. These tags are stored in AWS and retrieved via the RDS API during the discovery process. This tag-based approach provides flexibility and follows AWS best practices for resource organization.
 
+### Centralized Deployment Model
+
+The dashboard uses a **centralized deployment model**:
+- **Single dashboard instance** monitors all RDS instances across all AWS accounts
+- **No environment-based deployments** (no separate dev/staging/prod deployments of the dashboard)
+- **RDS instances are classified** by their `Environment` tag, not by which deployment they belong to
+- **Authorization is based on RDS instance environment**, not deployment environment
+
 ### Important: These Are AWS Resource Tags
 
 - **Storage Location:** Tags are stored in AWS on the RDS instance itself

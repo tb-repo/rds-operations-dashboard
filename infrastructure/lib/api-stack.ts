@@ -7,6 +7,8 @@ export interface ApiStackProps extends cdk.StackProps {
   queryHandlerFunction: lambda.IFunction;
   operationsFunction: lambda.IFunction;
   cloudOpsGeneratorFunction: lambda.IFunction;
+  monitoringFunction: lambda.IFunction;
+  approvalWorkflowFunction: lambda.IFunction;
 }
 
 export class ApiStack extends cdk.Stack {
@@ -75,6 +77,8 @@ export class ApiStack extends cdk.Stack {
     this.createComplianceEndpoints(props.queryHandlerFunction);
     this.createOperationsEndpoints(props.operationsFunction, props.queryHandlerFunction);
     this.createCloudOpsEndpoints(props.cloudOpsGeneratorFunction, props.queryHandlerFunction);
+    this.createMonitoringEndpoints(props.monitoringFunction);
+    this.createApprovalEndpoints(props.approvalWorkflowFunction);
 
     // Outputs
     new cdk.CfnOutput(this, 'ApiUrl', {
@@ -476,6 +480,159 @@ export class ApiStack extends cdk.Stack {
           'method.request.querystring.instance_id': false,
           'method.request.querystring.limit': false,
         },
+      }
+    );
+  }
+
+  private createMonitoringEndpoints(monitoringFunction: lambda.IFunction): void {
+    // /monitoring resource
+    const monitoring = this.api.root.addResource('monitoring');
+
+    // POST /monitoring - Fetch CloudWatch metrics
+    monitoring.addMethod(
+      'POST',
+      new apigateway.LambdaIntegration(monitoringFunction, {
+        proxy: true,
+      }),
+      {
+        apiKeyRequired: true,
+        requestValidator: new apigateway.RequestValidator(this, 'MonitoringRequestValidator', {
+          restApi: this.api,
+          validateRequestBody: true,
+          validateRequestParameters: false,
+        }),
+        requestModels: {
+          'application/json': new apigateway.Model(this, 'MonitoringRequestModel', {
+            restApi: this.api,
+            contentType: 'application/json',
+            schema: {
+              type: apigateway.JsonSchemaType.OBJECT,
+              required: ['operation', 'instance_id'],
+              properties: {
+                operation: {
+                  type: apigateway.JsonSchemaType.STRING,
+                  enum: ['get_compute_metrics', 'get_connection_metrics', 'get_real_time_status'],
+                },
+                instance_id: {
+                  type: apigateway.JsonSchemaType.STRING,
+                },
+                hours: {
+                  type: apigateway.JsonSchemaType.NUMBER,
+                },
+                period: {
+                  type: apigateway.JsonSchemaType.NUMBER,
+                },
+              },
+            },
+          }),
+        },
+      }
+    );
+  }
+
+  private createApprovalEndpoints(approvalWorkflowFunction: lambda.IFunction): void {
+    // /approvals resource
+    const approvals = this.api.root.addResource('approvals');
+
+    // POST /approvals - Manage approval workflow
+    approvals.addMethod(
+      'POST',
+      new apigateway.LambdaIntegration(approvalWorkflowFunction, {
+        proxy: true,
+      }),
+      {
+        apiKeyRequired: true,
+        requestValidator: new apigateway.RequestValidator(this, 'ApprovalRequestValidator', {
+          restApi: this.api,
+          validateRequestBody: true,
+          validateRequestParameters: false,
+        }),
+        requestModels: {
+          'application/json': new apigateway.Model(this, 'ApprovalRequestModel', {
+            restApi: this.api,
+            contentType: 'application/json',
+            schema: {
+              type: apigateway.JsonSchemaType.OBJECT,
+              required: ['operation'],
+              properties: {
+                operation: {
+                  type: apigateway.JsonSchemaType.STRING,
+                  enum: [
+                    'create_request',
+                    'approve_request',
+                    'reject_request',
+                    'cancel_request',
+                    'get_pending_approvals',
+                    'get_user_requests',
+                    'get_request'
+                  ],
+                },
+                request_id: {
+                  type: apigateway.JsonSchemaType.STRING,
+                },
+                operation_type: {
+                  type: apigateway.JsonSchemaType.STRING,
+                },
+                instance_id: {
+                  type: apigateway.JsonSchemaType.STRING,
+                },
+                parameters: {
+                  type: apigateway.JsonSchemaType.OBJECT,
+                },
+                requested_by: {
+                  type: apigateway.JsonSchemaType.STRING,
+                },
+                approved_by: {
+                  type: apigateway.JsonSchemaType.STRING,
+                },
+                rejected_by: {
+                  type: apigateway.JsonSchemaType.STRING,
+                },
+                cancelled_by: {
+                  type: apigateway.JsonSchemaType.STRING,
+                },
+                risk_level: {
+                  type: apigateway.JsonSchemaType.STRING,
+                  enum: ['low', 'medium', 'high'],
+                },
+                environment: {
+                  type: apigateway.JsonSchemaType.STRING,
+                },
+                justification: {
+                  type: apigateway.JsonSchemaType.STRING,
+                },
+                reason: {
+                  type: apigateway.JsonSchemaType.STRING,
+                },
+                comments: {
+                  type: apigateway.JsonSchemaType.STRING,
+                },
+                user_email: {
+                  type: apigateway.JsonSchemaType.STRING,
+                },
+                status: {
+                  type: apigateway.JsonSchemaType.STRING,
+                },
+              },
+            },
+          }),
+        },
+      }
+    );
+
+    // GET /approvals - Get all approvals (for convenience)
+    approvals.addMethod(
+      'GET',
+      new apigateway.LambdaIntegration(approvalWorkflowFunction, {
+        proxy: true,
+        requestTemplates: {
+          'application/json': JSON.stringify({
+            operation: 'get_pending_approvals',
+          }),
+        },
+      }),
+      {
+        apiKeyRequired: true,
       }
     );
   }

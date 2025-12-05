@@ -1,4 +1,4 @@
-import axios from 'axios'
+import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
 
 // BFF API URL (no API key needed - handled by BFF)
 const API_BASE_URL = import.meta.env.VITE_BFF_API_URL || import.meta.env.VITE_API_BASE_URL
@@ -12,15 +12,73 @@ export const apiClient = axios.create({
     ...(API_KEY && !import.meta.env.VITE_BFF_API_URL && { 'x-api-key': API_KEY }),
   },
   timeout: 30000,
+  // Enable automatic request cancellation on component unmount
+  signal: undefined, // Will be set per-request by React Query
 })
+
+// Token getter function (will be set by App.tsx)
+let getAccessToken: (() => string | null) | null = null
+
+export function setTokenGetter(getter: () => string | null) {
+  getAccessToken = getter
+}
+
+// Request interceptor to add authentication token
+apiClient.interceptors.request.use(
+  (config: InternalAxiosRequestConfig) => {
+    // Add Authorization header if token is available
+    if (getAccessToken) {
+      const token = getAccessToken()
+      console.log('API Request Interceptor:', {
+        url: config.url,
+        hasToken: !!token,
+        tokenPreview: token ? token.substring(0, 20) + '...' : 'none'
+      })
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`
+      } else {
+        console.warn('No token available for API request:', config.url)
+      }
+    } else {
+      console.warn('Token getter not configured')
+    }
+    return config
+  },
+  (error) => {
+    return Promise.reject(error)
+  }
+)
 
 // Response interceptor for error handling
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => {
+  (error: AxiosError) => {
     if (error.response) {
       // Server responded with error status
-      console.error('API Error:', error.response.status, error.response.data)
+      console.error('API Error:', {
+        status: error.response.status,
+        statusText: error.response.statusText,
+        data: error.response.data,
+        url: error.config?.url,
+        method: error.config?.method
+      })
+
+      // Handle 401 Unauthorized - redirect to login
+      if (error.response.status === 401) {
+        console.warn('Unauthorized - redirecting to login')
+        // Clear any stored session data
+        window.location.href = '/login'
+      }
+
+      // Handle 403 Forbidden - show access denied
+      if (error.response.status === 403) {
+        console.warn('Forbidden - insufficient permissions', {
+          url: error.config?.url,
+          response: error.response.data
+        })
+        // Could redirect to access denied page or show error message
+        window.location.href = '/access-denied'
+      }
     } else if (error.request) {
       // Request made but no response
       console.error('Network Error:', error.message)
@@ -106,7 +164,7 @@ export interface ComplianceCheck {
 
 export interface OperationRequest {
   instance_id: string
-  operation_type: 'create_snapshot' | 'reboot' | 'modify_backup_window'
+  operation_type: 'create_snapshot' | 'reboot' | 'modify_backup_window' | 'stop_instance' | 'start_instance' | 'enable_storage_autoscaling' | 'modify_storage'
   parameters?: Record<string, any>
 }
 

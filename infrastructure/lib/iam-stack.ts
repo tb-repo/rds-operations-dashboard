@@ -27,12 +27,12 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 
 export interface IamStackProps extends cdk.StackProps {
-  readonly environment: string;
   readonly externalId: string;
   readonly rdsInventoryTable: dynamodb.ITable;
   readonly metricsCacheTable: dynamodb.ITable;
   readonly healthAlertsTable: dynamodb.ITable;
   readonly auditLogTable: dynamodb.ITable;
+  readonly approvalsTable: dynamodb.ITable;
   readonly dataBucket: s3.IBucket;
 }
 
@@ -43,8 +43,8 @@ export class IamStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: IamStackProps) {
     super(scope, id, props);
 
-    const { environment, externalId, rdsInventoryTable, metricsCacheTable, 
-            healthAlertsTable, auditLogTable, dataBucket } = props;
+    const { externalId, rdsInventoryTable, metricsCacheTable, 
+            healthAlertsTable, auditLogTable, approvalsTable, dataBucket } = props;
 
     // ========================================
     // Lambda Execution Role (Management Account)
@@ -52,7 +52,7 @@ export class IamStack extends cdk.Stack {
     // Purpose: Role assumed by Lambda functions to access AWS services
     // Requirements: REQ-9.1 (IAM roles), REQ-9.2 (least-privilege)
     this.lambdaExecutionRole = new iam.Role(this, 'LambdaExecutionRole', {
-      roleName: `RDSDashboardLambdaRole-${environment}`,
+      roleName: 'RDSDashboardLambdaRole',
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
       description: 'Execution role for RDS Dashboard Lambda functions',
       managedPolicies: [
@@ -66,7 +66,7 @@ export class IamStack extends cdk.Stack {
     // ========================================
     // Purpose: Read/write access to DynamoDB tables
     const dynamoDbPolicy = new iam.Policy(this, 'DynamoDbPolicy', {
-      policyName: `RDSDashboard-DynamoDB-${environment}`,
+      policyName: 'RDSDashboard-DynamoDB',
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
@@ -85,10 +85,12 @@ export class IamStack extends cdk.Stack {
             metricsCacheTable.tableArn,
             healthAlertsTable.tableArn,
             auditLogTable.tableArn,
+            approvalsTable.tableArn,
             // Include GSI ARNs
             `${rdsInventoryTable.tableArn}/index/*`,
             `${healthAlertsTable.tableArn}/index/*`,
             `${auditLogTable.tableArn}/index/*`,
+            `${approvalsTable.tableArn}/index/*`,
           ],
         }),
       ],
@@ -98,21 +100,45 @@ export class IamStack extends cdk.Stack {
     // ========================================
     // Policy: S3 Access
     // ========================================
-    // Purpose: Read/write access to data bucket
+    // Purpose: Read/write access to data bucket with prefix restrictions
+    // Requirements: REQ-6.3 (least-privilege)
     const s3Policy = new iam.Policy(this, 'S3Policy', {
-      policyName: `RDSDashboard-S3-${environment}`,
+      policyName: 'RDSDashboard-S3',
       statements: [
+        // Read access to entire bucket (for listing and getting objects)
         new iam.PolicyStatement({
+          sid: 'AllowS3Read',
           effect: iam.Effect.ALLOW,
           actions: [
-            's3:PutObject',
             's3:GetObject',
-            's3:DeleteObject',
             's3:ListBucket',
+            's3:GetBucketLocation',
           ],
           resources: [
             dataBucket.bucketArn,
             `${dataBucket.bucketArn}/*`,
+          ],
+        }),
+        // Write access restricted to specific prefixes
+        new iam.PolicyStatement({
+          sid: 'AllowS3WriteToSpecificPrefixes',
+          effect: iam.Effect.ALLOW,
+          actions: ['s3:PutObject'],
+          resources: [
+            `${dataBucket.bucketArn}/cloudops-templates/*`,
+            `${dataBucket.bucketArn}/cost-reports/*`,
+            `${dataBucket.bucketArn}/compliance-reports/*`,
+            `${dataBucket.bucketArn}/audit-logs/*`,
+            `${dataBucket.bucketArn}/discovery-results/*`,
+          ],
+        }),
+        // Delete access only for temporary files
+        new iam.PolicyStatement({
+          sid: 'AllowS3DeleteTempFiles',
+          effect: iam.Effect.ALLOW,
+          actions: ['s3:DeleteObject'],
+          resources: [
+            `${dataBucket.bucketArn}/temp/*`,
           ],
         }),
       ],
@@ -124,13 +150,13 @@ export class IamStack extends cdk.Stack {
     // ========================================
     // Purpose: Publish alerts to SNS topics
     const snsPolicy = new iam.Policy(this, 'SnsPolicy', {
-      policyName: `RDSDashboard-SNS-${environment}`,
+      policyName: 'RDSDashboard-SNS',
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
           actions: ['sns:Publish'],
           resources: [
-            `arn:aws:sns:${this.region}:${this.account}:rds-dashboard-alerts-${environment}`,
+            `arn:aws:sns:${this.region}:${this.account}:rds-dashboard-alerts`,
           ],
         }),
       ],
@@ -141,18 +167,35 @@ export class IamStack extends cdk.Stack {
     // Policy: STS AssumeRole (Cross-Account)
     // ========================================
     // Purpose: Assume roles in target accounts to access RDS and CloudWatch
-    // Requirements: REQ-9.1 (cross-account access)
+    // Requirements: REQ-9.1 (cross-account access), REQ-6.3 (least-privilege)
+    // 
+    // SECURITY NOTE: This policy uses a wildcard (*) for account IDs.
+    // For production deployments, replace with explicit account IDs:
+    // 
+    // resources: [
+    //   'arn:aws:iam::111111111111:role/RDSDashboardCrossAccountRole',
+    //   'arn:aws:iam::222222222222:role/RDSDashboardCrossAccountRole',
+    //   'arn:aws:iam::333333333333:role/RDSDashboardCrossAccountRole',
+    // ]
+    // 
+    // This can be configured via CDK context or environment variables.
     const stsPolicy = new iam.Policy(this, 'StsPolicy', {
-      policyName: `RDSDashboard-STS-${environment}`,
+      policyName: 'RDSDashboard-STS',
       statements: [
         new iam.PolicyStatement({
+          sid: 'AllowAssumeRoleInTargetAccounts',
           effect: iam.Effect.ALLOW,
           actions: ['sts:AssumeRole'],
           resources: [
-            // Allow assuming role in any account (target accounts)
+            // TODO: Replace wildcard with explicit account IDs for production
             // Role name must be RDSDashboardCrossAccountRole
             'arn:aws:iam::*:role/RDSDashboardCrossAccountRole',
           ],
+          conditions: {
+            StringEquals: {
+              'sts:ExternalId': externalId,
+            },
+          },
         }),
       ],
     });
@@ -163,7 +206,7 @@ export class IamStack extends cdk.Stack {
     // ========================================
     // Purpose: Publish custom metrics
     const cloudWatchPolicy = new iam.Policy(this, 'CloudWatchPolicy', {
-      policyName: `RDSDashboard-CloudWatch-${environment}`,
+      policyName: 'RDSDashboard-CloudWatch',
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
@@ -187,7 +230,7 @@ export class IamStack extends cdk.Stack {
     // Purpose: Discover and describe RDS instances in current account
     // Requirements: REQ-1.1 (RDS discovery), REQ-1.2 (metadata extraction)
     const rdsPolicy = new iam.Policy(this, 'RdsPolicy', {
-      policyName: `RDSDashboard-RDS-${environment}`,
+      policyName: 'RDSDashboard-RDS',
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
@@ -208,29 +251,63 @@ export class IamStack extends cdk.Stack {
     // Policy: RDS Operations (Write Access)
     // ========================================
     // Purpose: Execute self-service operations on RDS instances
-    // Requirements: REQ-7 (Self-Service Operations)
-    // Note: Operations are restricted to non-production instances via application logic
+    // Requirements: REQ-7 (Self-Service Operations), REQ-6.3 (least-privilege)
+    // Security: Multi-layered protection with explicit DENY for production
     const rdsOperationsPolicy = new iam.Policy(this, 'RdsOperationsPolicy', {
-      policyName: `RDSDashboard-RDS-Operations-${environment}`,
+      policyName: 'RDSDashboard-RDS-Operations',
       statements: [
+        // EXPLICIT DENY for production instances (highest priority)
+        // This ensures production instances cannot be modified even if other policies allow it
         new iam.PolicyStatement({
-          effect: iam.Effect.ALLOW,
+          sid: 'DenyProductionOperations',
+          effect: iam.Effect.DENY,
           actions: [
-            // Snapshot operations
             'rds:CreateDBSnapshot',
             'rds:CreateDBClusterSnapshot',
-            'rds:DescribeDBSnapshots',
-            'rds:DescribeDBClusterSnapshots',
-            // Reboot operations
             'rds:RebootDBInstance',
-            // Modify operations (for backup window, etc.)
             'rds:ModifyDBInstance',
             'rds:ModifyDBCluster',
-            // Start/Stop operations
             'rds:StartDBInstance',
             'rds:StopDBInstance',
             'rds:StartDBCluster',
             'rds:StopDBCluster',
+          ],
+          resources: ['*'],
+          conditions: {
+            StringEquals: {
+              'aws:ResourceTag/Environment': ['Production', 'Prod', 'PROD', 'production', 'prod'],
+            },
+          },
+        }),
+        // ALLOW operations on non-production instances only
+        new iam.PolicyStatement({
+          sid: 'AllowNonProductionOperations',
+          effect: iam.Effect.ALLOW,
+          actions: [
+            'rds:CreateDBSnapshot',
+            'rds:CreateDBClusterSnapshot',
+            'rds:RebootDBInstance',
+            'rds:ModifyDBInstance',
+            'rds:ModifyDBCluster',
+            'rds:StartDBInstance',
+            'rds:StopDBInstance',
+            'rds:StartDBCluster',
+            'rds:StopDBCluster',
+          ],
+          resources: ['*'],
+          conditions: {
+            StringNotEquals: {
+              'aws:ResourceTag/Environment': ['Production', 'Prod', 'PROD', 'production', 'prod'],
+            },
+          },
+        }),
+        // Read-only operations (no restrictions needed)
+        new iam.PolicyStatement({
+          sid: 'AllowSnapshotDescribe',
+          effect: iam.Effect.ALLOW,
+          actions: [
+            'rds:DescribeDBSnapshots',
+            'rds:DescribeDBClusterSnapshots',
           ],
           resources: ['*'],
         }),
@@ -251,19 +328,19 @@ export class IamStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'LambdaExecutionRoleArn', {
       value: this.lambdaExecutionRole.roleArn,
       description: 'ARN of Lambda execution role',
-      exportName: `${environment}-LambdaExecutionRoleArn`,
+      exportName: 'LambdaExecutionRoleArn',
     });
 
     new cdk.CfnOutput(this, 'LambdaExecutionRoleName', {
       value: this.lambdaExecutionRole.roleName,
       description: 'Name of Lambda execution role',
-      exportName: `${environment}-LambdaExecutionRoleName`,
+      exportName: 'LambdaExecutionRoleName',
     });
 
     new cdk.CfnOutput(this, 'ExternalId', {
       value: externalId,
       description: 'External ID for cross-account role trust policy',
-      exportName: `${environment}-ExternalId`,
+      exportName: 'ExternalId',
     });
   }
 
