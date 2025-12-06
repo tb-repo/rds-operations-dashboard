@@ -37,6 +37,7 @@ sys.path.append('/opt/python')
 from shared.logger import StructuredLogger
 from shared.aws_clients import AWSClients
 from shared.config import Config
+from shared.cors_helper import get_cors_headers, is_preflight_request, handle_preflight
 
 logger = StructuredLogger("approval-workflow")
 
@@ -691,10 +692,14 @@ def lambda_handler(event, context):
         
         operation = body.get('operation')
         
+        # Handle CORS preflight
+        if is_preflight_request(event):
+            return handle_preflight(event)
+        
         if not operation:
             return {
                 'statusCode': 400,
-                'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+                'headers': get_cors_headers(event),
                 'body': json.dumps({'error': 'Missing required parameter: operation'})
             }
         
@@ -752,21 +757,21 @@ def lambda_handler(event, context):
             if not result:
                 return {
                     'statusCode': 404,
-                    'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+                    'headers': get_cors_headers(event),
                     'body': json.dumps({'error': 'Request not found'})
                 }
         
         else:
             return {
                 'statusCode': 400,
-                'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+                'headers': get_cors_headers(event),
                 'body': json.dumps({'error': f'Unknown operation: {operation}'})
             }
         
         # Return success response
         return {
             'statusCode': 200,
-            'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+            'headers': get_cors_headers(event),
             'body': json.dumps(result, default=str)
         }
         
@@ -774,7 +779,7 @@ def lambda_handler(event, context):
         logger.error(f"Validation error: {str(e)}")
         return {
             'statusCode': 400,
-            'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+            'headers': get_cors_headers(event),
             'body': json.dumps({'error': str(e)})
         }
     
@@ -782,6 +787,6 @@ def lambda_handler(event, context):
         logger.error(f"Error in approval workflow handler: {str(e)}")
         return {
             'statusCode': 500,
-            'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+            'headers': get_cors_headers(event),
             'body': json.dumps({'error': 'Internal server error', 'message': str(e)})
         }

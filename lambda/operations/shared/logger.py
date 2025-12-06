@@ -318,11 +318,11 @@ if __name__ == '__main__':
     result = test_function(1, 2)
     print(f"Result: {result}")
     
-    # Test sanitization
+    # Test sanitization (using fake test data - not real credentials)
     sensitive_data = {
         'username': 'john.doe',
-        'password': 'secret123',
-        'api_key': 'abc123',
+        'password': 'FAKE_PASSWORD_FOR_TESTING',  # Fake password for testing redaction
+        'api_key': 'FAKE_API_KEY_FOR_TESTING',    # Fake API key for testing redaction
         'instance_id': 'i-1234567890'
     }
     sanitized = sanitize_log_data(sensitive_data)

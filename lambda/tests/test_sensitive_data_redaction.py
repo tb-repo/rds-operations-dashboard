@@ -131,11 +131,13 @@ class TestSensitiveDataRedaction:
     
     def test_jwt_token_redaction(self):
         """Test that JWT tokens are redacted in strings."""
-        text = "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
+        # Using a fake JWT-like pattern for testing (not a real token)
+        fake_jwt = "eyJTEST.eyJTEST.FAKE_SIGNATURE_FOR_TESTING_ONLY"
+        text = f"Authorization: Bearer {fake_jwt}"
         
         redacted = redact_patterns(text)
         
-        assert 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9' not in redacted
+        assert 'eyJTEST' not in redacted
         assert '[REDACTED_JWT]' in redacted
     
     def test_email_partial_redaction(self):
@@ -218,12 +220,14 @@ class TestSensitiveDataRedaction:
     
     def test_multiple_patterns_in_string(self):
         """Test that multiple sensitive patterns in a string are all redacted."""
-        text = "Access key AKIAIOSFODNN7EXAMPLE and JWT eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.test"
+        # Using fake patterns for testing (not real credentials)
+        fake_jwt = "eyJTEST.eyJTEST.FAKE_SIG"
+        text = f"Access key AKIAIOSFODNN7EXAMPLE and JWT {fake_jwt}"
         
         redacted = redact_patterns(text)
         
         assert 'AKIAIOSFODNN7EXAMPLE' not in redacted
-        assert 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9' not in redacted
+        assert 'eyJTEST' not in redacted
         assert '[REDACTED_AWS_KEY]' in redacted
         assert '[REDACTED_JWT]' in redacted
     

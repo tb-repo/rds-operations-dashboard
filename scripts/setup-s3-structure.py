@@ -71,6 +71,9 @@ def upload_templates(s3_client, bucket_name, templates_dir):
     """
     print(f"\nUploading templates from: {templates_dir}")
     
+    # Convert to Path object and resolve to absolute path
+    templates_base = Path(templates_dir).resolve()
+    
     template_files = [
         'cloudops_scaling_template.md',
         'cloudops_parameter_change_template.md',
@@ -78,9 +81,22 @@ def upload_templates(s3_client, bucket_name, templates_dir):
     ]
     
     for template_file in template_files:
-        template_path = os.path.join(templates_dir, template_file)
+        # Validate filename doesn't contain path traversal sequences
+        if '..' in template_file or '/' in template_file or '\\' in template_file:
+            print(f"  ✗ Invalid template filename: {template_file}")
+            return False
         
-        if not os.path.exists(template_path):
+        # Construct path and resolve to absolute path
+        template_path = (templates_base / template_file).resolve()
+        
+        # Security check: Ensure resolved path is within templates directory
+        try:
+            template_path.relative_to(templates_base)
+        except ValueError:
+            print(f"  ✗ Path traversal detected: {template_file}")
+            return False
+        
+        if not template_path.exists():
             print(f"  ⚠ Template not found: {template_path}")
             continue
         

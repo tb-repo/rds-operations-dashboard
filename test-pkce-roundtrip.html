@@ -107,8 +107,15 @@
                 }
 
             } catch (error) {
-                output.innerHTML += `<h2 class="error">Error: ${error.message}</h2>`;
-                output.innerHTML += `<pre>${error.stack}</pre>`;
+                // ✅ SECURITY: Use textContent to prevent XSS
+                const errorHeader = document.createElement('h2');
+                errorHeader.className = 'error';
+                errorHeader.textContent = `Error: ${error.message}`;
+                output.appendChild(errorHeader);
+                
+                const errorStack = document.createElement('pre');
+                errorStack.textContent = error.stack;
+                output.appendChild(errorStack);
             }
         }
     </script>

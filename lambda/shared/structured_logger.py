@@ -519,7 +519,7 @@ if __name__ == '__main__':
         'password': 'secret123',
         'api_key': 'AKIAIOSFODNN7EXAMPLE',
         'instance_id': 'i-1234567890',
-        'jwt_token': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U'
+        'jwt_token': 'eyJTEST.eyJTEST.FAKE_JWT_TOKEN_FOR_TESTING'  # Fake JWT pattern for testing
     }
     sanitized = sanitize_log_data(sensitive_data)
     print(f"Sanitized: {json.dumps(sanitized, indent=2)}")

@@ -73,8 +73,9 @@ try {
             $pylintFiles = Get-ChildItem -Path "lambda" -Filter "*.py" -Recurse | Where-Object { $_.FullName -notmatch "tests|__pycache__|\.venv" }
             if ($pylintFiles.Count -gt 0) {
                 $pylintResult = pylint $pylintFiles.FullName --exit-zero 2>&1
-                $pylintScore = ($pylintResult | Select-String "Your code has been rated at ([\d\.]+)/10").Matches.Groups[1].Value
-                if ($pylintScore) {
+                $pylintScoreMatch = $pylintResult | Select-String "Your code has been rated at ([\d\.]+)/10"
+                if ($pylintScoreMatch) {
+                    $pylintScore = $pylintScoreMatch.Matches[0].Groups[1].Value
                     Write-Host "  ✅ Pylint score: $pylintScore/10" -ForegroundColor Green
                     if ([double]$pylintScore -lt 8.0) {
                         $issues.Medium++
@@ -287,8 +288,9 @@ try {
     }
     
     $duration = (Get-Date) - $startTime
+    $durationSeconds = $duration.TotalSeconds.ToString("F1")
     Write-Host ""
-    Write-Host "⏱️  Analysis completed in $($duration.TotalSeconds.ToString('F1')) seconds" -ForegroundColor Cyan
+    Write-Host "⏱️  Analysis completed in $durationSeconds seconds" -ForegroundColor Cyan
     
 } catch {
     Write-Host "❌ Analysis failed: $($_.Exception.Message)" -ForegroundColor Red
