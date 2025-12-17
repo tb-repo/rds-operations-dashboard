@@ -30,6 +30,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as kms from 'aws-cdk-lib/aws-kms';
 import { Tags } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
@@ -44,6 +45,9 @@ export class DataStack extends cdk.Stack {
   public readonly auditLogTable: dynamodb.Table;
   public readonly costSnapshotsTable: dynamodb.Table;
   public readonly approvalsTable: dynamodb.Table;
+  public readonly onboardingStateTable: dynamodb.Table;
+  public readonly onboardingAuditLogTable: dynamodb.Table;
+  public readonly externalIdKmsKey: kms.Key;
   public readonly dataBucket: s3.Bucket;
 
   constructor(scope: Construct, id: string, props: DataStackProps) {
@@ -269,6 +273,100 @@ export class DataStack extends cdk.Stack {
     });
 
     // ========================================
+    // DynamoDB Table: onboarding_state
+    // ========================================
+    // Purpose: Store account onboarding state and metadata
+    // Requirements: REQ-1.3 (account metadata storage), REQ-3.1 (approval workflow), REQ-4.1 (audit logging)
+    this.onboardingStateTable = new dynamodb.Table(this, 'OnboardingStateTable', {
+      tableName: 'rds-dashboard-onboarding-state',
+      partitionKey: {
+        name: 'account_id',
+        type: dynamodb.AttributeType.STRING,
+      },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      encryption: dynamodb.TableEncryption.AWS_MANAGED,
+      pointInTimeRecovery: true, // Enable for audit compliance
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      timeToLiveAttribute: 'ttl', // Enable TTL for rejected/failed requests (90 days)
+    });
+
+    Tags.of(this.onboardingStateTable).add('Project', 'RDSDashboard');
+    Tags.of(this.onboardingStateTable).add('CostCenter', 'DBA-Team');
+    Tags.of(this.onboardingStateTable).add('Feature', 'AutomatedOnboarding');
+
+    // GSI: Query accounts by status
+    // Use case: Get all pending/provisioning/failed accounts
+    this.onboardingStateTable.addGlobalSecondaryIndex({
+      indexName: 'status-index',
+      partitionKey: {
+        name: 'status',
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'created_at',
+        type: dynamodb.AttributeType.STRING,
+      },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // GSI: Query accounts by organizational unit
+    // Use case: Get all accounts in a specific OU
+    this.onboardingStateTable.addGlobalSecondaryIndex({
+      indexName: 'ou-index',
+      partitionKey: {
+        name: 'organizational_unit',
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'created_at',
+        type: dynamodb.AttributeType.STRING,
+      },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // ========================================
+    // DynamoDB Table: onboarding_audit_log
+    // ========================================
+    // Purpose: Track all account onboarding activities
+    // Requirements: REQ-4.1, REQ-4.2, REQ-4.3, REQ-4.4 (audit logging)
+    this.onboardingAuditLogTable = new dynamodb.Table(this, 'OnboardingAuditLogTable', {
+      tableName: 'rds-dashboard-onboarding-audit',
+      partitionKey: {
+        name: 'account_id',
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'timestamp',
+        type: dynamodb.AttributeType.STRING,
+      },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      encryption: dynamodb.TableEncryption.AWS_MANAGED,
+      pointInTimeRecovery: true, // Enable for audit compliance
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES, // Enable streams for real-time processing
+    });
+
+    Tags.of(this.onboardingAuditLogTable).add('Project', 'RDSDashboard');
+    Tags.of(this.onboardingAuditLogTable).add('CostCenter', 'DBA-Team');
+    Tags.of(this.onboardingAuditLogTable).add('Feature', 'AutomatedOnboarding');
+
+    // ========================================
+    // KMS Key: External ID Encryption
+    // ========================================
+    // Purpose: Encrypt external IDs for cross-account role trust policies
+    // Requirements: REQ-9.2 (external ID encryption)
+    this.externalIdKmsKey = new kms.Key(this, 'ExternalIdKmsKey', {
+      description: 'KMS key for encrypting external IDs used in cross-account roles',
+      enableKeyRotation: true, // Enable automatic key rotation (annual)
+      removalPolicy: cdk.RemovalPolicy.RETAIN, // Prevent accidental deletion
+      alias: 'rds-dashboard/external-id-encryption',
+    });
+
+    Tags.of(this.externalIdKmsKey).add('Project', 'RDSDashboard');
+    Tags.of(this.externalIdKmsKey).add('CostCenter', 'DBA-Team');
+    Tags.of(this.externalIdKmsKey).add('Feature', 'AutomatedOnboarding');
+
+    // ========================================
     // S3 Bucket: Data Storage
     // ========================================
     // Purpose: Store historical metrics, compliance reports, cost reports, CloudOps requests
@@ -365,6 +463,30 @@ export class DataStack extends cdk.Stack {
       value: this.dataBucket.bucketArn,
       description: 'S3 bucket ARN',
       exportName: 'DataBucketArn',
+    });
+
+    new cdk.CfnOutput(this, 'OnboardingStateTableName', {
+      value: this.onboardingStateTable.tableName,
+      description: 'DynamoDB table for account onboarding state',
+      exportName: 'OnboardingStateTableName',
+    });
+
+    new cdk.CfnOutput(this, 'OnboardingAuditLogTableName', {
+      value: this.onboardingAuditLogTable.tableName,
+      description: 'DynamoDB table for onboarding audit logs',
+      exportName: 'OnboardingAuditLogTableName',
+    });
+
+    new cdk.CfnOutput(this, 'ExternalIdKmsKeyId', {
+      value: this.externalIdKmsKey.keyId,
+      description: 'KMS key ID for external ID encryption',
+      exportName: 'ExternalIdKmsKeyId',
+    });
+
+    new cdk.CfnOutput(this, 'ExternalIdKmsKeyArn', {
+      value: this.externalIdKmsKey.keyArn,
+      description: 'KMS key ARN for external ID encryption',
+      exportName: 'ExternalIdKmsKeyArn',
     });
   }
 }

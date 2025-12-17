@@ -48,8 +48,8 @@ from shared.correlation_middleware import with_correlation_id, CorrelationContex
 from cache_manager import MetricsCacheManager
 from alerting import AlertManager
 
-# Initialize logger
-logger = get_logger('health-monitor-service', event=event, lambda_context=context)
+# Logger will be initialized in the handler
+logger = None
 
 
 @with_correlation_id
@@ -66,6 +66,9 @@ def lambda_handler(event, context):
     
     Requirements: REQ-2.1 (health monitoring), REQ-8.1 (cost optimization), REQ-5.1 (structured logging)
     """
+    # Initialize logger with event and context
+    global logger
+    logger = get_logger('health-monitor-service', event=event, lambda_context=context)
             
     logger.info('Health monitor service started',
                 function_name=context.function_name if context else 'local',

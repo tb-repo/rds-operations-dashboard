@@ -30,7 +30,7 @@ Write-Host "Step 1: Deploying Auth Stack..." -ForegroundColor Yellow
 Write-Host ""
 
 # Deploy the auth stack
-npx aws-cdk deploy "RDSDashboard-Auth-$Environment" --require-approval never
+npx aws-cdk deploy "RDSDashboard-Auth" --require-approval never
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "❌ Auth stack deployment failed!" -ForegroundColor Red
@@ -43,7 +43,7 @@ Write-Host ""
 
 # Get stack outputs
 Write-Host "Step 2: Retrieving Cognito configuration..." -ForegroundColor Yellow
-$stackName = "RDSDashboard-Auth-$Environment"
+$stackName = "RDSDashboard-Auth"
 
 $userPoolId = aws cloudformation describe-stacks `
     --stack-name $stackName `
@@ -86,34 +86,43 @@ Write-Host ""
 
 # Create initial admin user if email provided
 if ($AdminEmail) {
-    Write-Host "Step 3: Creating initial admin user..." -ForegroundColor Yellow
+    Write-Host "Step 3: Setting up admin user..." -ForegroundColor Yellow
     Write-Host "Admin Email: $AdminEmail" -ForegroundColor White
     Write-Host ""
     
-    # Generate temporary password
-    $tempPassword = -join ((65..90) + (97..122) + (48..57) + (33,35,36,37,38,42,43,45,61,63,64) | Get-Random -Count 16 | ForEach-Object {[char]$_})
-    
-    # Create user
-    aws cognito-idp admin-create-user `
-        --user-pool-id $userPoolId `
-        --username $AdminEmail `
-        --user-attributes Name=email,Value=$AdminEmail Name=email_verified,Value=true `
-        --temporary-password $tempPassword `
-        --message-action SUPPRESS
-    
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "✅ Admin user created successfully!" -ForegroundColor Green
-        Write-Host ""
-        
-        # Add user to Admin group
-        Write-Host "Adding user to Admin group..." -ForegroundColor Yellow
-        aws cognito-idp admin-add-user-to-group `
+    # Check if user already exists
+    $userExists = $false
+    try {
+        $existingUser = aws cognito-idp admin-get-user `
             --user-pool-id $userPoolId `
-            --username $AdminEmail `
-            --group-name Admin
+            --username $AdminEmail 2>&1
         
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ User added to Admin group!" -ForegroundColor Green
+            $userExists = $true
+            Write-Host "✅ Admin user already exists: $AdminEmail" -ForegroundColor Green
+            Write-Host ""
+        }
+    }
+    catch {
+        # User doesn't exist, will create below
+    }
+    
+    if (-not $userExists) {
+        # Generate temporary password with required complexity
+        $tempPassword = -join ((65..90) + (97..122) + (48..57) + (33,35,36,37,38,42,43,45,61,63,64) | Get-Random -Count 16 | ForEach-Object {[char]$_})
+        
+        Write-Host "Creating new admin user..." -ForegroundColor Yellow
+        
+        # Create user
+        aws cognito-idp admin-create-user `
+            --user-pool-id $userPoolId `
+            --username $AdminEmail `
+            --user-attributes Name=email,Value=$AdminEmail Name=email_verified,Value=true `
+            --temporary-password $tempPassword `
+            --message-action SUPPRESS
+        
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "✅ Admin user created successfully!" -ForegroundColor Green
             Write-Host ""
             Write-Host "========================================" -ForegroundColor Cyan
             Write-Host "Admin User Credentials" -ForegroundColor Cyan
@@ -124,10 +133,25 @@ if ($AdminEmail) {
             Write-Host "⚠️  IMPORTANT: Save this password! You'll need to change it on first login." -ForegroundColor Yellow
             Write-Host ""
         } else {
-            Write-Host "❌ Failed to add user to Admin group" -ForegroundColor Red
+            Write-Host "⚠️  Failed to create admin user - may already exist or password policy issue" -ForegroundColor Yellow
+            Write-Host "You can create users manually later using the User Management interface." -ForegroundColor White
+            Write-Host ""
         }
+    }
+    
+    # Ensure user is in Admin group (works for both new and existing users)
+    Write-Host "Ensuring user is in Admin group..." -ForegroundColor Yellow
+    aws cognito-idp admin-add-user-to-group `
+        --user-pool-id $userPoolId `
+        --username $AdminEmail `
+        --group-name Admin 2>&1 | Out-Null
+    
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "✅ User is in Admin group!" -ForegroundColor Green
+        Write-Host ""
     } else {
-        Write-Host "❌ Failed to create admin user" -ForegroundColor Red
+        Write-Host "ℹ️  User may already be in Admin group" -ForegroundColor Cyan
+        Write-Host ""
     }
 } else {
     Write-Host "Step 3: Skipping admin user creation (no email provided)" -ForegroundColor Yellow

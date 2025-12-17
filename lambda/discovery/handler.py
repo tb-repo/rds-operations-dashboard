@@ -40,6 +40,9 @@ from shared.correlation_middleware import with_correlation_id, CorrelationContex
 from persistence import persist_instances
 from discovery import discover_all_instances
 
+# Initialize logger
+logger = get_logger(__name__)
+
 # Monitoring functions - create stubs if they don't exist
 def publish_discovery_metrics(discovery_results, persistence_results, config):
     """Publish metrics to CloudWatch."""

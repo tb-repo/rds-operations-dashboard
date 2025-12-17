@@ -18,7 +18,7 @@ try {
 
     # Deploy the BFF stack
     Write-Host "Deploying BFF stack..." -ForegroundColor Yellow
-    npx aws-cdk deploy "RDSDashboard-BFF-$Environment" --require-approval never
+    npx aws-cdk deploy "RDSDashboard-BFF" --require-approval never
 
     if ($LASTEXITCODE -ne 0) {
         throw "BFF stack deployment failed"
@@ -34,7 +34,7 @@ try {
     # Get BFF URL for frontend configuration
     Write-Host "Getting BFF API URL..." -ForegroundColor Yellow
     $bffUrl = aws cloudformation describe-stacks `
-        --stack-name "RDSDashboard-BFF-$Environment" `
+        --stack-name "RDSDashboard-BFF" `
         --query 'Stacks[0].Outputs[?OutputKey==`BffApiUrl`].OutputValue' `
         --output text
 

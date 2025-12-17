@@ -141,6 +141,9 @@ export class BffStack extends cdk.Stack {
         
         // AWS Configuration
         AWS_NODEJS_CONNECTION_REUSE_ENABLED: '1',
+        
+        // Force rebuild
+        BUILD_VERSION: '1.0.1',
       },
       description: 'Backend-for-Frontend Express service for RDS Dashboard with JWT validation and RBAC',
     });

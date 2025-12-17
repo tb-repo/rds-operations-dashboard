@@ -1,0 +1,128 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Cross-Account IAM Role for RDS Operations Dashboard'
+
+Parameters:
+  ManagementAccountId:
+    Type: String
+    Description: AWS Account ID where the RDS Dashboard is deployed
+    AllowedPattern: '^\d{12}$'
+    ConstraintDescription: Must be a valid 12-digit AWS Account ID
+  
+  ExternalId:
+    Type: String
+    Description: External ID for additional security
+    Default: 'rds-dashboard-unique-id-12345'
+  
+  RoleName:
+    Type: String
+    Description: Name of the cross-account role
+    Default: 'RDSDashboardCrossAccountRole'
+
+Resources:
+  CrossAccountRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: 'Allows RDS Dashboard in management account to discover and manage RDS instances'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${ManagementAccountId}:root'
+            Action: 'sts:AssumeRole'
+            Condition:
+              StringEquals:
+                'sts:ExternalId': !Ref ExternalId
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/ReadOnlyAccess'
+      Policies:
+        - PolicyName: RDSManagementPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # RDS Instance Management
+              - Sid: RDSInstanceOperations
+                Effect: Allow
+                Action:
+                  - 'rds:StartDBInstance'
+                  - 'rds:StopDBInstance'
+                  - 'rds:RebootDBInstance'
+                  - 'rds:ModifyDBInstance'
+                  - 'rds:CreateDBSnapshot'
+                  - 'rds:DeleteDBSnapshot'
+                  - 'rds:RestoreDBInstanceFromDBSnapshot'
+                  - 'rds:AddTagsToResource'
+                  - 'rds:RemoveTagsFromResource'
+                Resource: '*'
+              
+              # RDS Read Operations (already covered by ReadOnlyAccess, but explicit for clarity)
+              - Sid: RDSReadOperations
+                Effect: Allow
+                Action:
+                  - 'rds:Describe*'
+                  - 'rds:List*'
+                Resource: '*'
+              
+              # CloudWatch Metrics
+              - Sid: CloudWatchMetrics
+                Effect: Allow
+                Action:
+                  - 'cloudwatch:GetMetricStatistics'
+                  - 'cloudwatch:GetMetricData'
+                  - 'cloudwatch:ListMetrics'
+                Resource: '*'
+              
+              # Cost Explorer (for cost tracking)
+              - Sid: CostExplorer
+                Effect: Allow
+                Action:
+                  - 'ce:GetCostAndUsage'
+                  - 'ce:GetCostForecast'
+                Resource: '*'
+              
+              # EC2 (for VPC and network information)
+              - Sid: EC2NetworkInfo
+                Effect: Allow
+                Action:
+                  - 'ec2:DescribeVpcs'
+                  - 'ec2:DescribeSubnets'
+                  - 'ec2:DescribeSecurityGroups'
+                  - 'ec2:DescribeNetworkInterfaces'
+                Resource: '*'
+      Tags:
+        - Key: Project
+          Value: RDS-Operations-Dashboard
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Purpose
+          Value: Cross-Account-Access
+
+Outputs:
+  RoleArn:
+    Description: ARN of the cross-account role
+    Value: !GetAtt CrossAccountRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-RoleArn'
+  
+  RoleName:
+    Description: Name of the cross-account role
+    Value: !Ref CrossAccountRole
+    Export:
+      Name: !Sub '${AWS::StackName}-RoleName'
+  
+  ManagementAccountId:
+    Description: Management account ID that can assume this role
+    Value: !Ref ManagementAccountId
+  
+  ExternalId:
+    Description: External ID required to assume this role
+    Value: !Ref ExternalId
+  
+  TestAssumeRoleCommand:
+    Description: Command to test assuming this role
+    Value: !Sub |
+      aws sts assume-role \
+        --role-arn ${CrossAccountRole.Arn} \
+        --role-session-name test-session \
+        --external-id ${ExternalId}

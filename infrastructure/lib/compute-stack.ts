@@ -18,6 +18,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as kms from 'aws-cdk-lib/aws-kms';
 import { Construct } from 'constructs';
 
 export interface ComputeStackProps extends cdk.StackProps {
@@ -27,6 +28,9 @@ export interface ComputeStackProps extends cdk.StackProps {
   readonly healthAlertsTable: dynamodb.ITable;
   readonly auditLogTable: dynamodb.ITable;
   readonly approvalsTable: dynamodb.ITable;
+  readonly onboardingStateTable: dynamodb.ITable;
+  readonly onboardingAuditLogTable: dynamodb.ITable;
+  readonly externalIdKmsKey: kms.IKey;
   readonly dataBucket: s3.IBucket;
   readonly externalId: string;
   readonly targetAccounts: string[];
@@ -44,12 +48,14 @@ export class ComputeStack extends cdk.Stack {
   public readonly cloudOpsGeneratorFunction: lambda.Function;
   public readonly monitoringFunction: lambda.Function;
   public readonly approvalWorkflowFunction: lambda.Function;
+  public readonly accountDiscoveryFunction: lambda.Function;
 
   constructor(scope: Construct, id: string, props: ComputeStackProps) {
     super(scope, id, props);
 
     const { lambdaExecutionRole, rdsInventoryTable, metricsCacheTable,
-            healthAlertsTable, auditLogTable, approvalsTable, dataBucket, externalId,
+            healthAlertsTable, auditLogTable, approvalsTable, onboardingStateTable,
+            onboardingAuditLogTable, externalIdKmsKey, dataBucket, externalId,
             targetAccounts, targetRegions, snsTopicArn } = props;
 
     // ========================================
@@ -282,6 +288,60 @@ export class ComputeStack extends cdk.Stack {
     });
 
     // ========================================
+    // Lambda Function: Account Discovery (Onboarding)
+    // ========================================
+    // Purpose: Discover new AWS accounts from Organizations and initiate onboarding
+    // Requirements: REQ-1.1, REQ-1.2, REQ-1.3, REQ-1.4 (Account Discovery)
+    this.accountDiscoveryFunction = new lambda.Function(this, 'AccountDiscoveryFunction', {
+      functionName: 'rds-dashboard-account-discovery',
+      runtime: lambda.Runtime.PYTHON_3_11,
+      handler: 'account_discovery.lambda_handler',
+      code: lambda.Code.fromAsset('../lambda/onboarding'),
+      role: lambdaExecutionRole,
+      timeout: cdk.Duration.minutes(5),
+      memorySize: 512,
+      environment: {
+        ONBOARDING_STATE_TABLE: onboardingStateTable.tableName,
+        ONBOARDING_AUDIT_LOG_TABLE: onboardingAuditLogTable.tableName,
+        EXTERNAL_ID_KMS_KEY_ID: externalIdKmsKey.keyId,
+        CLOUDWATCH_NAMESPACE: 'RDSDashboard/Onboarding',
+        LOG_LEVEL: 'INFO',
+        MANAGEMENT_ACCOUNT_ID: this.account,
+      },
+      description: 'Discovers new AWS accounts and initiates automated onboarding',
+    });
+
+    // Grant permissions for account discovery Lambda
+    onboardingStateTable.grantReadWriteData(this.accountDiscoveryFunction);
+    onboardingAuditLogTable.grantReadWriteData(this.accountDiscoveryFunction);
+    externalIdKmsKey.grantEncryptDecrypt(this.accountDiscoveryFunction);
+
+    // Grant Organizations permissions
+    this.accountDiscoveryFunction.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'organizations:ListAccounts',
+        'organizations:DescribeAccount',
+        'organizations:ListAccountsForParent',
+        'organizations:DescribeOrganization',
+      ],
+      resources: ['*'],
+    }));
+
+    // Grant Secrets Manager permissions for external ID storage
+    this.accountDiscoveryFunction.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'secretsmanager:CreateSecret',
+        'secretsmanager:GetSecretValue',
+        'secretsmanager:DescribeSecret',
+        'secretsmanager:PutSecretValue',
+        'secretsmanager:TagResource',
+      ],
+      resources: [`arn:aws:secretsmanager:${this.region}:${this.account}:secret:rds-dashboard/external-ids/*`],
+    }));
+
+    // ========================================
     // CloudFormation Outputs
     // ========================================
     new cdk.CfnOutput(this, 'DiscoveryFunctionArn', {
@@ -342,6 +402,18 @@ export class ComputeStack extends cdk.Stack {
       value: this.cloudOpsGeneratorFunction.functionArn,
       description: 'ARN of CloudOps Generator Lambda function',
       exportName: 'CloudOpsGeneratorFunctionArn',
+    });
+
+    new cdk.CfnOutput(this, 'AccountDiscoveryFunctionArn', {
+      value: this.accountDiscoveryFunction.functionArn,
+      description: 'ARN of Account Discovery Lambda function',
+      exportName: 'AccountDiscoveryFunctionArn',
+    });
+
+    new cdk.CfnOutput(this, 'AccountDiscoveryFunctionName', {
+      value: this.accountDiscoveryFunction.functionName,
+      description: 'Name of Account Discovery Lambda function',
+      exportName: 'AccountDiscoveryFunctionName',
     });
   }
 }

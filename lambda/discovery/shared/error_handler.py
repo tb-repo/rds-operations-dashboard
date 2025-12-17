@@ -2,10 +2,27 @@
 Intelligent Error Handler
 
 Provides actionable error messages with remediation steps.
+Includes Lambda error handling decorator with correlation ID support.
+
+Metadata:
+{
+  "generated_by": "claude-3.5-sonnet",
+  "timestamp": "2025-12-04T10:00:00Z",
+  "version": "2.0.0",
+  "policy_version": "v1.0.0",
+  "traceability": "REQ-5.3 → DESIGN-ErrorHandling → TASK-6.1",
+  "review_status": "Pending",
+  "risk_level": "Level 2",
+  "reviewed_by": null,
+  "approved_by": null
+}
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Callable
 from datetime import datetime
+from functools import wraps
+import json
+import traceback
 
 
 class ActionableError:
@@ -286,3 +303,135 @@ def categorize_aws_error(error: Exception, context: Dict[str, Any]) -> Actionabl
     
     # Generic error
     return ErrorCatalog.generic_error(error, context)
+
+
+# HTTP Status Code Mapping
+ERROR_STATUS_CODES = {
+    'ValidationError': 400,
+    'ValueError': 400,
+    'KeyError': 400,
+    'TypeError': 400,
+    'AccessDenied': 403,
+    'Forbidden': 403,
+    'InsufficientPermissions': 403,
+    'NotFound': 404,
+    'ResourceNotFound': 404,
+    'Conflict': 409,
+    'ThrottlingException': 429,
+    'TooManyRequests': 429,
+    'InternalError': 500,
+    'ServiceUnavailable': 503,
+    'Timeout': 504,
+}
+
+
+def get_status_code(error: Exception) -> int:
+    """
+    Map exception to HTTP status code.
+    
+    Args:
+        error: The exception
+    
+    Returns:
+        HTTP status code
+    """
+    error_type = type(error).__name__
+    error_message = str(error)
+    
+    # Check error type
+    if error_type in ERROR_STATUS_CODES:
+        return ERROR_STATUS_CODES[error_type]
+    
+    # Check error message for keywords
+    for keyword, status_code in ERROR_STATUS_CODES.items():
+        if keyword.lower() in error_message.lower():
+            return status_code
+    
+    # Default to 500
+    return 500
+
+
+def handle_lambda_error(func: Callable) -> Callable:
+    """
+    Decorator for Lambda handlers to provide consistent error handling.
+    
+    Features:
+    - Catches all exceptions
+    - Maps to appropriate HTTP status codes
+    - Includes correlation IDs in error responses
+    - Logs errors with full context
+    - Returns properly formatted error responses
+    
+    Usage:
+        @handle_lambda_error
+        def lambda_handler(event, context):
+            # Your handler code
+            pass
+    """
+    @wraps(func)
+    def wrapper(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+        correlation_id = None
+        
+        try:
+            # Extract correlation ID if present
+            correlation_id = event.get('headers', {}).get('X-Correlation-ID')
+            if not correlation_id:
+                correlation_id = event.get('requestContext', {}).get('requestId', 'unknown')
+            
+            # Call the actual handler
+            return func(event, context)
+            
+        except Exception as e:
+            # Get status code
+            status_code = get_status_code(e)
+            
+            # Build error context
+            error_context = {
+                'function_name': getattr(context, 'function_name', 'unknown'),
+                'request_id': getattr(context, 'aws_request_id', 'unknown'),
+                'correlation_id': correlation_id,
+                'error_type': type(e).__name__,
+                'error_message': str(e),
+                'traceback': traceback.format_exc()
+            }
+            
+            # Try to categorize AWS errors
+            actionable_error = None
+            if 'boto' in str(type(e).__module__).lower() or 'botocore' in str(type(e).__module__).lower():
+                try:
+                    actionable_error = categorize_aws_error(e, error_context)
+                except:
+                    pass
+            
+            # Build error response
+            error_response = {
+                'error': type(e).__name__,
+                'message': str(e),
+                'correlation_id': correlation_id,
+                'timestamp': datetime.utcnow().isoformat() + 'Z'
+            }
+            
+            # Add actionable error details if available
+            if actionable_error:
+                error_response['actionable_error'] = actionable_error.to_dict()
+            
+            # Log the error (will be picked up by structured logger if configured)
+            print(json.dumps({
+                'level': 'ERROR',
+                'message': f'Lambda handler error: {type(e).__name__}',
+                'correlation_id': correlation_id,
+                'error': error_response,
+                'context': error_context
+            }))
+            
+            # Return error response
+            return {
+                'statusCode': status_code,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'X-Correlation-ID': correlation_id or 'unknown'
+                },
+                'body': json.dumps(error_response)
+            }
+    
+    return wrapper

@@ -14,6 +14,9 @@ export type AuditEventType =
   | 'CLOUDOPS_GENERATED'
   | 'USER_ROLE_CHANGED'
   | 'DISCOVERY_TRIGGERED'
+  | 'APPROVAL_REQUEST_CREATED'
+  | 'APPROVAL_GRANTED'
+  | 'APPROVAL_REJECTED'
 
 /**
  * Audit log entry structure
@@ -107,7 +110,7 @@ export class AuditService {
    * Log operation event
    */
   logOperationEvent(
-    eventType: 'OPERATION_EXECUTED' | 'CLOUDOPS_GENERATED' | 'DISCOVERY_TRIGGERED',
+    eventType: 'OPERATION_EXECUTED' | 'CLOUDOPS_GENERATED' | 'DISCOVERY_TRIGGERED' | 'APPROVAL_REQUEST_CREATED' | 'APPROVAL_GRANTED' | 'APPROVAL_REJECTED',
     userId: string,
     userEmail: string,
     ipAddress: string,

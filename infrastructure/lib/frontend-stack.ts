@@ -131,6 +131,7 @@ export class FrontendStack extends cdk.Stack {
         encryption: s3.BucketEncryption.S3_MANAGED,
         blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
         removalPolicy: cdk.RemovalPolicy.RETAIN,
+        objectOwnership: s3.ObjectOwnership.OBJECT_WRITER, // Enable ACLs for CloudFront logging
         lifecycleRules: [
           {
             expiration: cdk.Duration.days(90),

@@ -7,6 +7,7 @@ import StatCard from '@/components/StatCard'
 import LoadingSpinner from '@/components/LoadingSpinner'
 import ErrorMessage from '@/components/ErrorMessage'
 import StatusBadge from '@/components/StatusBadge'
+import ErrorResolutionWidget from '@/components/ErrorResolutionWidget'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 
 export default function Dashboard() {
@@ -100,9 +101,19 @@ export default function Dashboard() {
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
 
   const handleTriggerDiscovery = async () => {
-    // This would trigger the discovery process
-    console.log('Triggering discovery...')
-    // TODO: Implement discovery trigger API call
+    try {
+      console.log('Triggering discovery...')
+      const result = await api.triggerDiscovery()
+      console.log('Discovery triggered successfully:', result)
+      alert('Discovery triggered successfully! Instances will be refreshed shortly.')
+      // Refresh instances after a short delay to allow discovery to complete
+      setTimeout(() => {
+        refetchInstances()
+      }, 5000)
+    } catch (error) {
+      console.error('Failed to trigger discovery:', error)
+      alert('Failed to trigger discovery. Please check your permissions and try again.')
+    }
   }
 
   return (
@@ -209,6 +220,11 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </div>
       </div>
+
+      {/* Error Resolution Widget */}
+      <PermissionGuard permission="view_metrics">
+        <ErrorResolutionWidget />
+      </PermissionGuard>
 
       {/* Recent Alerts */}
       {alerts && alerts.length > 0 && (

@@ -23,14 +23,14 @@ export default function UserManagement() {
   const { data: usersData, isLoading, error } = useQuery({
     queryKey: ['users'],
     queryFn: async () => {
-      const response = await apiClient.get<{ users: UserInfo[]; total: number }>('/users')
+      const response = await apiClient.get<{ users: UserInfo[]; total: number }>('/api/users')
       return response.data
     },
   })
 
   const addRoleMutation = useMutation({
     mutationFn: async ({ userId, role }: { userId: string; role: string }) => {
-      await apiClient.post(`/users/${userId}/groups`, { group: role })
+      await apiClient.post(`/api/users/${userId}/groups`, { group: role })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })
@@ -45,7 +45,7 @@ export default function UserManagement() {
 
   const removeRoleMutation = useMutation({
     mutationFn: async ({ userId, role }: { userId: string; role: string }) => {
-      await apiClient.delete(`/users/${userId}/groups/${role}`)
+      await apiClient.delete(`/api/users/${userId}/groups/${role}`)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] })

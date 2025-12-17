@@ -18,6 +18,7 @@ import { DataStack } from '../lib/data-stack';
 import { IamStack } from '../lib/iam-stack';
 import { ComputeStack } from '../lib/compute-stack';
 import { OrchestrationStack } from '../lib/orchestration-stack';
+import { OnboardingOrchestrationStack } from '../lib/onboarding-orchestration-stack';
 import { ApiStack } from '../lib/api-stack';
 import { MonitoringStack } from '../lib/monitoring-stack';
 import { BffStack } from '../lib/bff-stack';
@@ -100,6 +101,9 @@ const computeStack = new ComputeStack(app, 'RDSDashboard-Compute', {
   healthAlertsTable: dataStack.healthAlertsTable,
   auditLogTable: dataStack.auditLogTable,
   approvalsTable: dataStack.approvalsTable,
+  onboardingStateTable: dataStack.onboardingStateTable,
+  onboardingAuditLogTable: dataStack.onboardingAuditLogTable,
+  externalIdKmsKey: dataStack.externalIdKmsKey,
   dataBucket: dataStack.dataBucket,
   externalId,
   targetAccounts,
@@ -135,6 +139,23 @@ const orchestrationStack = new OrchestrationStack(app, 'RDSDashboard-Orchestrati
 orchestrationStack.addDependency(computeStack);
 
 // ========================================
+// Onboarding Orchestration Stack (EventBridge Rules for Account Discovery)
+// ========================================
+const onboardingOrchestrationStack = new OnboardingOrchestrationStack(app, 'RDSDashboard-OnboardingOrchestration', {
+  env,
+  accountDiscoveryFunction: computeStack.accountDiscoveryFunction,
+  description: 'RDS Dashboard - Onboarding Orchestration Layer (EventBridge rules for account discovery)',
+  tags: {
+    Project: 'RDSDashboard',
+    ManagedBy: 'CDK',
+    Feature: 'AutomatedOnboarding',
+  },
+});
+
+// Onboarding orchestration stack depends on compute stack
+onboardingOrchestrationStack.addDependency(computeStack);
+
+// ========================================
 // API Stack (API Gateway)
 // ========================================
 const apiStack = new ApiStack(app, 'RDSDashboard-API', {
@@ -144,6 +165,7 @@ const apiStack = new ApiStack(app, 'RDSDashboard-API', {
   cloudOpsGeneratorFunction: computeStack.cloudOpsGeneratorFunction,
   monitoringFunction: computeStack.monitoringFunction,
   approvalWorkflowFunction: computeStack.approvalWorkflowFunction,
+  discoveryFunction: computeStack.discoveryFunction,
   description: 'RDS Dashboard - API Layer (API Gateway and endpoints)',
   tags: {
     Project: 'RDSDashboard',

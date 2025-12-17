@@ -9,6 +9,7 @@ export interface ApiStackProps extends cdk.StackProps {
   cloudOpsGeneratorFunction: lambda.IFunction;
   monitoringFunction: lambda.IFunction;
   approvalWorkflowFunction: lambda.IFunction;
+  discoveryFunction: lambda.IFunction;
 }
 
 export class ApiStack extends cdk.Stack {
@@ -79,6 +80,7 @@ export class ApiStack extends cdk.Stack {
     this.createCloudOpsEndpoints(props.cloudOpsGeneratorFunction, props.queryHandlerFunction);
     this.createMonitoringEndpoints(props.monitoringFunction);
     this.createApprovalEndpoints(props.approvalWorkflowFunction);
+    this.createDiscoveryEndpoints(props.discoveryFunction);
 
     // Outputs
     new cdk.CfnOutput(this, 'ApiUrl', {
@@ -630,6 +632,23 @@ export class ApiStack extends cdk.Stack {
             operation: 'get_pending_approvals',
           }),
         },
+      }),
+      {
+        apiKeyRequired: true,
+      }
+    );
+  }
+
+  private createDiscoveryEndpoints(discoveryFunction: lambda.IFunction): void {
+    // /discovery resource
+    const discovery = this.api.root.addResource('discovery');
+
+    // POST /discovery/trigger - Trigger RDS discovery
+    const trigger = discovery.addResource('trigger');
+    trigger.addMethod(
+      'POST',
+      new apigateway.LambdaIntegration(discoveryFunction, {
+        proxy: true,
       }),
       {
         apiKeyRequired: true,

@@ -6,19 +6,49 @@ import { AuthMiddleware } from './middleware/auth'
 import { AuthorizationMiddleware } from './middleware/authorization'
 import { CognitoAdminService } from './services/cognito-admin'
 import { createUserRoutes } from './routes/users'
+import { createErrorResolutionRoutes } from './routes/error-resolution'
 import { logger } from './utils/logger'
 import { auditService } from './services/audit'
 import axios from 'axios'
+import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager'
 
 // Load environment variables
 dotenv.config()
+
+// Function to load API key from Secrets Manager
+async function loadApiKeyFromSecretsManager(): Promise<string> {
+  const secretArn = process.env.API_SECRET_ARN
+  
+  if (!secretArn) {
+    logger.warn('API_SECRET_ARN not set, using INTERNAL_API_KEY from environment')
+    return process.env.INTERNAL_API_KEY || ''
+  }
+
+  try {
+    const client = new SecretsManagerClient({ region: process.env.COGNITO_REGION || 'ap-southeast-1' })
+    const command = new GetSecretValueCommand({ SecretId: secretArn })
+    const response = await client.send(command)
+    
+    if (response.SecretString) {
+      const secret = JSON.parse(response.SecretString)
+      logger.info('Successfully loaded API key from Secrets Manager')
+      return secret.apiKey || ''
+    }
+    
+    logger.error('Secret string not found in Secrets Manager response')
+    return ''
+  } catch (error: any) {
+    logger.error('Failed to load API key from Secrets Manager', { error: error.message })
+    // Fallback to environment variable
+    return process.env.INTERNAL_API_KEY || ''
+  }
+}
 
 // Validate required environment variables
 const requiredEnvVars = [
   'COGNITO_USER_POOL_ID',
   'COGNITO_REGION',
   'INTERNAL_API_URL',
-  'INTERNAL_API_KEY',
 ]
 
 for (const envVar of requiredEnvVars) {
@@ -28,7 +58,18 @@ for (const envVar of requiredEnvVars) {
   }
 }
 
-// Initialize Express app
+// Cache environment variables at startup
+const INTERNAL_API_URL = process.env.INTERNAL_API_URL!.replace(/\/$/, '')
+const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID!
+const COGNITO_REGION = process.env.COGNITO_REGION!
+const COGNITO_CLIENT_ID = process.env.COGNITO_CLIENT_ID
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000'
+const AUDIT_LOG_GROUP = process.env.AUDIT_LOG_GROUP
+
+// Global variable for API key (loaded at startup)
+let INTERNAL_API_KEY = ''
+
+// Create Express app
 const app = express()
 const port = process.env.PORT || 3000
 
@@ -51,7 +92,7 @@ app.use(helmet({
 
 // CORS configuration
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: FRONTEND_URL,
   credentials: true,
   optionsSuccessStatus: 200,
 }
@@ -74,25 +115,65 @@ app.use((req, res, next) => {
 
 // Initialize auth and authorization middleware
 const authMiddleware = new AuthMiddleware(
-  process.env.COGNITO_USER_POOL_ID!,
-  process.env.COGNITO_REGION!,
-  process.env.COGNITO_CLIENT_ID
+  COGNITO_USER_POOL_ID,
+  COGNITO_REGION,
+  COGNITO_CLIENT_ID
 )
 
 const authorizationMiddleware = new AuthorizationMiddleware(
-  process.env.INTERNAL_API_URL!,
-  process.env.INTERNAL_API_KEY!
+  INTERNAL_API_URL,
+  INTERNAL_API_KEY  // Will be empty initially, but updated before first request
 )
 
 const cognitoAdminService = new CognitoAdminService(
-  process.env.COGNITO_REGION!,
-  process.env.COGNITO_USER_POOL_ID!
+  COGNITO_REGION,
+  COGNITO_USER_POOL_ID
 )
+
+// Middleware to ensure API key is loaded
+app.use(async (req, res, next) => {
+  if (!INTERNAL_API_KEY) {
+    try {
+      INTERNAL_API_KEY = await loadApiKeyFromSecretsManager()
+      logger.info('API key loaded on first request', { hasKey: !!INTERNAL_API_KEY })
+    } catch (error: any) {
+      logger.error('Failed to load API key', { error: error.message })
+      return res.status(500).json({ error: 'Internal configuration error' })
+    }
+  }
+  next()
+})
 
 // Health check endpoint (no auth required)
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() })
 })
+
+// Health check endpoint with /api prefix (for consistency)
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'healthy', timestamp: new Date().toISOString() })
+})
+
+// Health metrics endpoint for specific instances
+app.get(
+  '/api/health/:instanceId',
+  authMiddleware.authenticate(),
+  authorizationMiddleware.authorize('view_metrics'),
+  async (req: Request, res: Response) => {
+    try {
+      const response = await axios.get(
+        `${INTERNAL_API_URL}/health/${req.params.instanceId}`,
+        {
+          headers: { 'x-api-key': INTERNAL_API_KEY },
+        }
+      )
+      res.json(response.data)
+    } catch (error) {
+      logger.error('Error fetching health metrics', { error, instanceId: req.params.instanceId })
+      res.status(500).json({ error: 'Failed to fetch health metrics' })
+    }
+  }
+)
 
 // Apply authentication to all /api routes
 app.use('/api', authMiddleware.authenticate())
@@ -106,8 +187,8 @@ app.get(
   authorizationMiddleware.authorize('view_instances'),
   async (req: Request, res: Response) => {
     try {
-      const response = await axios.get(`${process.env.INTERNAL_API_URL}/instances`, {
-        headers: { 'x-api-key': process.env.INTERNAL_API_KEY },
+      const response = await axios.get(`${INTERNAL_API_URL}/instances`, {
+        headers: { 'x-api-key': INTERNAL_API_KEY },
         params: req.query,
       })
       res.json(response.data)
@@ -124,9 +205,9 @@ app.get(
   async (req: Request, res: Response) => {
     try {
       const response = await axios.get(
-        `${process.env.INTERNAL_API_URL}/instances/${req.params.id}`,
+        `${INTERNAL_API_URL}/instances/${req.params.id}`,
         {
-          headers: { 'x-api-key': process.env.INTERNAL_API_KEY },
+          headers: { 'x-api-key': INTERNAL_API_KEY },
         }
       )
       res.json(response.data)
@@ -145,8 +226,8 @@ app.get(
   authorizationMiddleware.authorize('view_metrics'),
   async (req: Request, res: Response) => {
     try {
-      const response = await axios.get(`${process.env.INTERNAL_API_URL}/metrics`, {
-        headers: { 'x-api-key': process.env.INTERNAL_API_KEY },
+      const response = await axios.get(`${INTERNAL_API_URL}/metrics`, {
+        headers: { 'x-api-key': INTERNAL_API_KEY },
         params: req.query,
       })
       res.json(response.data)
@@ -165,8 +246,8 @@ app.get(
   authorizationMiddleware.authorize('view_compliance'),
   async (req: Request, res: Response) => {
     try {
-      const response = await axios.get(`${process.env.INTERNAL_API_URL}/compliance`, {
-        headers: { 'x-api-key': process.env.INTERNAL_API_KEY },
+      const response = await axios.get(`${INTERNAL_API_URL}/compliance`, {
+        headers: { 'x-api-key': INTERNAL_API_KEY },
         params: req.query,
       })
       res.json(response.data)
@@ -185,8 +266,8 @@ app.get(
   authorizationMiddleware.authorize('view_costs'),
   async (req: Request, res: Response) => {
     try {
-      const response = await axios.get(`${process.env.INTERNAL_API_URL}/costs`, {
-        headers: { 'x-api-key': process.env.INTERNAL_API_KEY },
+      const response = await axios.get(`${INTERNAL_API_URL}/costs`, {
+        headers: { 'x-api-key': INTERNAL_API_KEY },
         params: req.query,
       })
       res.json(response.data)
@@ -205,7 +286,6 @@ app.post(
   authorizationMiddleware.authorize('execute_operations'),
   async (req: Request, res: Response) => {
     try {
-      // Add user context to request body for audit logging
       const requestBody = {
         ...req.body,
         requested_by: req.user?.email,
@@ -213,10 +293,10 @@ app.post(
       }
 
       const response = await axios.post(
-        `${process.env.INTERNAL_API_URL}/operations`,
+        `${INTERNAL_API_URL}/operations`,
         requestBody,
         {
-          headers: { 'x-api-key': process.env.INTERNAL_API_KEY },
+          headers: { 'x-api-key': INTERNAL_API_KEY },
         }
       )
       
@@ -227,7 +307,6 @@ app.post(
         instanceId: req.body.instance_id,
       })
 
-      // Log operation execution
       auditService.logOperationEvent(
         'OPERATION_EXECUTED',
         req.user?.userId || 'unknown',
@@ -261,7 +340,6 @@ app.post(
   authorizationMiddleware.authorize('generate_cloudops'),
   async (req: Request, res: Response) => {
     try {
-      // Add user context to request body
       const requestBody = {
         ...req.body,
         requested_by: req.user?.email,
@@ -269,10 +347,10 @@ app.post(
       }
 
       const response = await axios.post(
-        `${process.env.INTERNAL_API_URL}/cloudops`,
+        `${INTERNAL_API_URL}/cloudops`,
         requestBody,
         {
-          headers: { 'x-api-key': process.env.INTERNAL_API_KEY },
+          headers: { 'x-api-key': INTERNAL_API_KEY },
         }
       )
       
@@ -283,7 +361,6 @@ app.post(
         requestType: req.body.request_type,
       })
 
-      // Log CloudOps generation
       auditService.logOperationEvent(
         'CLOUDOPS_GENERATED',
         req.user?.userId || 'unknown',
@@ -318,10 +395,10 @@ app.post(
   async (req: Request, res: Response) => {
     try {
       const response = await axios.post(
-        `${process.env.INTERNAL_API_URL}/discovery/trigger`,
+        `${INTERNAL_API_URL}/discovery/trigger`,
         req.body,
         {
-          headers: { 'x-api-key': process.env.INTERNAL_API_KEY },
+          headers: { 'x-api-key': INTERNAL_API_KEY },
         }
       )
       
@@ -330,7 +407,6 @@ app.post(
         email: req.user?.email,
       })
 
-      // Log discovery trigger
       auditService.logOperationEvent(
         'DISCOVERY_TRIGGERED',
         req.user?.userId || 'unknown',
@@ -359,11 +435,11 @@ app.post(
   async (req: Request, res: Response) => {
     try {
       const response = await axios.post(
-        `${process.env.INTERNAL_API_URL}/monitoring`,
+        `${INTERNAL_API_URL}/monitoring`,
         req.body,
         {
           headers: { 
-            'x-api-key': process.env.INTERNAL_API_KEY,
+            'x-api-key': INTERNAL_API_KEY,
             'Content-Type': 'application/json',
           },
         }
@@ -393,10 +469,9 @@ app.post(
 // ========================================
 app.post(
   '/api/approvals',
-  authorizationMiddleware.authorize('execute_operations'), // Requires operations permission
+  authorizationMiddleware.authorize('execute_operations'),
   async (req: Request, res: Response) => {
     try {
-      // Add user context to request body
       const requestBody = {
         ...req.body,
         requested_by: req.user?.email,
@@ -407,11 +482,11 @@ app.post(
       }
 
       const response = await axios.post(
-        `${process.env.INTERNAL_API_URL}/approvals`,
+        `${INTERNAL_API_URL}/approvals`,
         requestBody,
         {
           headers: { 
-            'x-api-key': process.env.INTERNAL_API_KEY,
+            'x-api-key': INTERNAL_API_KEY,
             'Content-Type': 'application/json',
           },
         }
@@ -424,7 +499,6 @@ app.post(
         requestId: req.body.request_id,
       })
 
-      // Log approval events
       const operation = req.body.operation
       if (operation === 'create_request') {
         auditService.logOperationEvent(
@@ -487,10 +561,10 @@ app.get(
   async (req: Request, res: Response) => {
     try {
       const response = await axios.get(
-        `${process.env.INTERNAL_API_URL}/approvals`,
+        `${INTERNAL_API_URL}/approvals`,
         {
           headers: { 
-            'x-api-key': process.env.INTERNAL_API_KEY,
+            'x-api-key': INTERNAL_API_KEY,
           },
           params: {
             user_email: req.user?.email,
@@ -507,19 +581,30 @@ app.get(
 )
 
 // ========================================
+// Error Resolution Endpoints
+// ========================================
+const errorResolutionRoutes = createErrorResolutionRoutes(
+  INTERNAL_API_URL,
+  () => INTERNAL_API_KEY
+)
+
+app.use(
+  '/api/errors',
+  authorizationMiddleware.authorize('view_metrics'),
+  errorResolutionRoutes
+)
+
+// ========================================
 // User Management Endpoints (Admin only)
 // ========================================
 const userRoutes = createUserRoutes(cognitoAdminService)
 
-// Apply authorization middleware to user management routes (except /me)
 app.use(
   '/api/users',
   (req, res, next) => {
-    // Skip authorization for /me endpoint
     if (req.path === '/me') {
       return next()
     }
-    // Apply manage_users permission for all other user endpoints
     return authorizationMiddleware.authorize('manage_users')(req, res, next)
   },
   userRoutes
@@ -554,8 +639,9 @@ app.listen(port, () => {
   logger.info(`BFF server started`, {
     port,
     environment: process.env.NODE_ENV || 'development',
-    cognitoUserPoolId: process.env.COGNITO_USER_POOL_ID,
-    cognitoRegion: process.env.COGNITO_REGION,
+    cognitoUserPoolId: COGNITO_USER_POOL_ID,
+    cognitoRegion: COGNITO_REGION,
+    internalApiUrl: INTERNAL_API_URL,
   })
 })
 

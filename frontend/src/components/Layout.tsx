@@ -30,7 +30,7 @@ export default function Layout() {
             <div className="flex items-center">
               <Database className="h-8 w-8 text-blue-600" />
               <h1 className="ml-3 text-xl font-semibold text-gray-900">
-                RDS Operations Dashboard
+                RDS Command Hub
               </h1>
             </div>
             <div className="flex items-center gap-4">

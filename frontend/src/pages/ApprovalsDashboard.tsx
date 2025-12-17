@@ -62,7 +62,7 @@ export default function ApprovalsDashboard() {
   const { data: pendingApprovals, isLoading: pendingLoading } = useQuery({
     queryKey: ['pending-approvals'],
     queryFn: async () => {
-      const response = await apiClient.post('/approvals', {
+      const response = await apiClient.post('/api/approvals', {
         operation: 'get_pending_approvals',
         user_email: user?.email
       })
@@ -75,7 +75,7 @@ export default function ApprovalsDashboard() {
   const { data: myRequests, isLoading: myRequestsLoading } = useQuery({
     queryKey: ['my-requests'],
     queryFn: async () => {
-      const response = await apiClient.post('/approvals', {
+      const response = await apiClient.post('/api/approvals', {
         operation: 'get_user_requests',
         user_email: user?.email
       })
@@ -87,7 +87,7 @@ export default function ApprovalsDashboard() {
   // Approve mutation
   const approveMutation = useMutation({
     mutationFn: async ({ requestId, comments }: { requestId: string; comments?: string }) => {
-      const response = await apiClient.post('/approvals', {
+      const response = await apiClient.post('/api/approvals', {
         operation: 'approve_request',
         request_id: requestId,
         approved_by: user?.email,
@@ -107,7 +107,7 @@ export default function ApprovalsDashboard() {
   // Reject mutation
   const rejectMutation = useMutation({
     mutationFn: async ({ requestId, reason }: { requestId: string; reason: string }) => {
-      const response = await apiClient.post('/approvals', {
+      const response = await apiClient.post('/api/approvals', {
         operation: 'reject_request',
         request_id: requestId,
         rejected_by: user?.email,
@@ -127,7 +127,7 @@ export default function ApprovalsDashboard() {
   // Cancel mutation
   const cancelMutation = useMutation({
     mutationFn: async (requestId: string) => {
-      const response = await apiClient.post('/approvals', {
+      const response = await apiClient.post('/api/approvals', {
         operation: 'cancel_request',
         request_id: requestId,
         cancelled_by: user?.email

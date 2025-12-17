@@ -208,26 +208,26 @@ export const api = {
     if (filters?.status) params.append('status', filters.status)
     
     const response = await apiClient.get<{ instances: RDSInstance[] }>(
-      `/instances?${params.toString()}`
+      `/api/instances?${params.toString()}`
     )
     return response.data.instances
   },
 
   getInstance: async (instanceId: string) => {
-    const response = await apiClient.get<{ instance: RDSInstance }>(`/instances/${instanceId}`)
+    const response = await apiClient.get<{ instance: RDSInstance }>(`/api/instances/${instanceId}`)
     return response.data.instance
   },
 
   // Health
   getHealth: async (instanceId?: string) => {
-    const url = instanceId ? `/health/${instanceId}` : '/health'
+    const url = instanceId ? `/api/health/${instanceId}` : '/api/health'
     const response = await apiClient.get<{ metrics: HealthMetric[] }>(url)
     return response.data.metrics
   },
 
   getAlerts: async (instanceId?: string) => {
     // Use /health endpoint instead of /alerts (they're the same)
-    const url = instanceId ? `/health/${instanceId}` : '/health'
+    const url = instanceId ? `/api/health/${instanceId}` : '/api/health'
     const response = await apiClient.get<{ alerts: HealthAlert[] }>(url)
     return response.data.alerts || []
   },
@@ -239,7 +239,7 @@ export const api = {
     if (filters?.region) params.append('region', filters.region)
     
     const response = await apiClient.get<{ costs?: CostData[]; total_cost?: number; message?: string }>(
-      `/costs?${params.toString()}`
+      `/api/costs?${params.toString()}`
     )
     // API returns {total_cost, costs: {}} but frontend expects array
     // Return empty array if costs not available yet
@@ -248,35 +248,112 @@ export const api = {
 
   getRecommendations: async () => {
     const response = await apiClient.get<{ recommendations: CostRecommendation[] }>(
-      '/costs?action=recommendations'
+      '/api/costs?action=recommendations'
     )
     return response.data.recommendations || []
   },
 
   // Compliance
   getCompliance: async (instanceId?: string) => {
-    const url = instanceId ? `/compliance/${instanceId}` : '/compliance'
+    const url = instanceId ? `/api/compliance/${instanceId}` : '/api/compliance'
     const response = await apiClient.get<{ checks?: ComplianceCheck[]; message?: string }>(url)
     return response.data.checks || []
   },
 
   // Operations
   executeOperation: async (request: OperationRequest) => {
-    const response = await apiClient.post<OperationResult>('/operations', request)
+    const response = await apiClient.post<OperationResult>('/api/operations', request)
     return response.data
   },
 
   // CloudOps Requests
   generateCloudOpsRequest: async (request: CloudOpsRequest) => {
-    const response = await apiClient.post<CloudOpsResponse>('/cloudops', request)
+    const response = await apiClient.post<CloudOpsResponse>('/api/cloudops', request)
     return response.data
   },
 
   getCloudOpsHistory: async (instanceId?: string) => {
     const url = instanceId 
-      ? `/cloudops/history?instance_id=${instanceId}`
-      : '/cloudops/history'
+      ? `/api/cloudops/history?instance_id=${instanceId}`
+      : '/api/cloudops/history'
     const response = await apiClient.get<{ requests: CloudOpsResponse[] }>(url)
     return response.data.requests || []
+  },
+
+  // Discovery
+  triggerDiscovery: async () => {
+    const response = await apiClient.post<{ message: string; execution_id?: string }>(
+      '/api/discovery/trigger'
+    )
+    return response.data
+  },
+
+  // Error Resolution
+  getErrorDashboard: async (widgets?: string[]) => {
+    const params = new URLSearchParams()
+    if (widgets && widgets.length > 0) {
+      params.append('widgets', widgets.join(','))
+    }
+    
+    const response = await apiClient.get(
+      `/api/errors/dashboard?${params.toString()}`
+    )
+    return response.data
+  },
+
+  getErrorStatistics: async () => {
+    const response = await apiClient.get('/api/errors/statistics')
+    return response.data
+  },
+
+  detectError: async (errorData: {
+    status_code: number
+    error_message: string
+    service: string
+    endpoint: string
+    request_id: string
+    context?: Record<string, any>
+    user_id?: string
+    stack_trace?: string
+  }) => {
+    const response = await apiClient.post('/api/errors/detect', errorData)
+    return response.data
+  },
+
+  resolveError: async (resolutionData: {
+    error_id: string
+    resolution_strategy?: string
+    api_error: {
+      status_code: number
+      message: string
+      service: string
+      endpoint: string
+      category: string
+      severity: string
+      request_id?: string
+      user_id?: string
+      context?: Record<string, any>
+    }
+    context?: Record<string, any>
+  }) => {
+    const response = await apiClient.post('/api/errors/resolve', resolutionData)
+    return response.data
+  },
+
+  rollbackResolution: async (attemptId: string) => {
+    const response = await apiClient.post('/api/errors/rollback', {
+      attempt_id: attemptId
+    })
+    return response.data
+  },
+
+  getResolutionAttempt: async (attemptId: string) => {
+    const response = await apiClient.get(`/api/errors/attempts/${attemptId}`)
+    return response.data
+  },
+
+  getErrorResolutionHealth: async () => {
+    const response = await apiClient.get('/api/errors/health')
+    return response.data
   },
 }

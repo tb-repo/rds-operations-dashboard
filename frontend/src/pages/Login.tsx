@@ -26,7 +26,7 @@ export default function Login() {
             <Database className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            RDS Operations Dashboard
+            RDS Command Hub
           </h1>
           <p className="text-gray-600">
             Secure access for database administrators

@@ -1,0 +1,10 @@
+{
+  "httpMethod": "POST",
+  "path": "/api/approvals",
+  "headers": {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer test-token"
+  },
+  "body": "{\"operation\":\"list_requests\"}",
+  "isBase64Encoded": false
+}
