@@ -31,7 +31,7 @@ import sys
 import os
 
 # Add the parent directory to the path to import modules
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'error-resolution'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'error_resolution'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'monitoring'))
 
 # Import modules to test

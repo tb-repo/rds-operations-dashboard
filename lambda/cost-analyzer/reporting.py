@@ -14,7 +14,7 @@ from typing import Dict, List, Any, Optional
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from shared.logger import get_logger
-from shared.aws_clients import AWSClients, get_dynamodb_client, get_cloudwatch_client
+from shared.aws_clients import AWSClients
 
 logger = get_logger(__name__)
 

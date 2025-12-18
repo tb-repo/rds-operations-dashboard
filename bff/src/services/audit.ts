@@ -17,6 +17,9 @@ export type AuditEventType =
   | 'APPROVAL_REQUEST_CREATED'
   | 'APPROVAL_GRANTED'
   | 'APPROVAL_REJECTED'
+  | 'ERROR_DETECTION'
+  | 'ERROR_RESOLUTION'
+  | 'ERROR_ROLLBACK'
 
 /**
  * Audit log entry structure
@@ -110,7 +113,7 @@ export class AuditService {
    * Log operation event
    */
   logOperationEvent(
-    eventType: 'OPERATION_EXECUTED' | 'CLOUDOPS_GENERATED' | 'DISCOVERY_TRIGGERED' | 'APPROVAL_REQUEST_CREATED' | 'APPROVAL_GRANTED' | 'APPROVAL_REJECTED',
+    eventType: 'OPERATION_EXECUTED' | 'CLOUDOPS_GENERATED' | 'DISCOVERY_TRIGGERED' | 'APPROVAL_REQUEST_CREATED' | 'APPROVAL_GRANTED' | 'APPROVAL_REJECTED' | 'ERROR_DETECTION' | 'ERROR_RESOLUTION' | 'ERROR_ROLLBACK',
     userId: string,
     userEmail: string,
     ipAddress: string,

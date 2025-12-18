@@ -28,8 +28,8 @@ import os
 from hypothesis import given, strategies as st, settings, assume
 from hypothesis.strategies import composite
 
-# Add the error-resolution module to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'error-resolution'))
+# Add the error_resolution module to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'error_resolution'))
 
 from error_detector import (
     ErrorDetector, ErrorPatternMatcher, APIError,

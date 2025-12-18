@@ -103,6 +103,7 @@ const computeStack = new ComputeStack(app, 'RDSDashboard-Compute', {
   approvalsTable: dataStack.approvalsTable,
   onboardingStateTable: dataStack.onboardingStateTable,
   onboardingAuditLogTable: dataStack.onboardingAuditLogTable,
+  errorMetricsTable: dataStack.errorMetricsTable,
   externalIdKmsKey: dataStack.externalIdKmsKey,
   dataBucket: dataStack.dataBucket,
   externalId,
@@ -166,6 +167,8 @@ const apiStack = new ApiStack(app, 'RDSDashboard-API', {
   monitoringFunction: computeStack.monitoringFunction,
   approvalWorkflowFunction: computeStack.approvalWorkflowFunction,
   discoveryFunction: computeStack.discoveryFunction,
+  errorResolutionFunction: computeStack.errorResolutionFunction,
+  monitoringDashboardFunction: computeStack.monitoringDashboardFunction,
   description: 'RDS Dashboard - API Layer (API Gateway and endpoints)',
   tags: {
     Project: 'RDSDashboard',

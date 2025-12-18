@@ -48,7 +48,7 @@ except ImportError:
     # Try alternative import path
     import sys
     import os
-    sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'error-resolution'))
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'error_resolution'))
     from alert_system import (
         AlertSystem, AlertRuleEngine, AlertRule, Alert, AlertSeverity, 
         AlertStatus, NotificationChannel, get_alert_system

@@ -22,8 +22,8 @@ from datetime import datetime, timezone
 import sys
 import os
 
-# Add the error-resolution module to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'error-resolution'))
+# Add the error_resolution module to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'error_resolution'))
 
 from error_detector import (
     ErrorDetector, ErrorPatternMatcher, APIError,

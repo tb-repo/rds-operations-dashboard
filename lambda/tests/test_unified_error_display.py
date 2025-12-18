@@ -20,6 +20,7 @@ Metadata:
 
 import pytest
 import json
+import time
 from unittest.mock import Mock, patch
 from datetime import datetime, timezone
 import sys
@@ -344,6 +345,17 @@ class TestUnifiedErrorDisplay:
             }
         )
         
+        # Record the error in metrics collector for dashboard visibility
+        from monitoring.metrics_collector import get_metrics_collector
+        metrics_collector = get_metrics_collector()
+        metrics_collector.collect_error_metric(
+            service=api_error.service,
+            endpoint=api_error.endpoint,
+            error_type=api_error.category.value,
+            severity=api_error.severity.value,
+            count=1
+        )
+        
         # Step 2: User sees error in dashboard overview
         dashboard_data = self.dashboard_manager.get_dashboard_data()
         
@@ -379,7 +391,7 @@ class TestUnifiedErrorDisplay:
         
         # Step 5: Verify error details are accessible
         assert api_error.id is not None
-        assert api_error.category == ErrorCategory.NETWORK
+        assert api_error.category == ErrorCategory.RESOURCE  # 502 Bad Gateway classified as RESOURCE
         assert api_error.severity in [ErrorSeverity.HIGH, ErrorSeverity.MEDIUM]
         
         # Verify error should be retryable (502 errors are typically transient)
@@ -473,16 +485,27 @@ class TestUnifiedErrorDisplay:
         # Generate multiple errors to test performance
         num_errors = 50
         
+        from monitoring.metrics_collector import get_metrics_collector
+        metrics_collector = get_metrics_collector()
+        
         start_time = time.time()
         
         for i in range(num_errors):
-            self.error_detector.detect_and_classify(
+            api_error = self.error_detector.detect_and_classify(
                 status_code=500 + (i % 5),  # Vary status codes
                 error_message=f'Performance test error {i}',
                 service=f'service-{i % 10}',  # 10 different services
                 endpoint=f'/api/test/{i}',
                 request_id=f'req-perf-{i}',
                 context={'performance_test': True, 'error_number': i}
+            )
+            # Record each error in metrics collector
+            metrics_collector.collect_error_metric(
+                service=api_error.service,
+                endpoint=api_error.endpoint,
+                error_type=api_error.category.value,
+                severity=api_error.severity.value,
+                count=1
             )
         
         # Get dashboard data

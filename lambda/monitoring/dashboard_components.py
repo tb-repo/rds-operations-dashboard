@@ -30,12 +30,18 @@ import sys
 import os
 
 # Import metrics collector for MetricType
-from metrics_collector import MetricType
+try:
+    from .metrics_collector import MetricType
+except ImportError:
+    from metrics_collector import MetricType
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'shared'))
 
 try:
     from shared.structured_logger import get_logger
-    from metrics_collector import get_metrics_collector, MetricType
+    try:
+        from .metrics_collector import get_metrics_collector
+    except ImportError:
+        from metrics_collector import get_metrics_collector
 except ImportError:
     # Fallback for testing
     logging.basicConfig(level=logging.INFO)
@@ -416,9 +422,9 @@ class DashboardManager:
     def __init__(self):
         """Initialize dashboard manager."""
         self.widgets = {
-            'error_metrics': ErrorMetricsWidget(),
-            'error_trends': TrendVisualizationWidget(),
-            'system_health': SystemHealthWidget()
+            'error_metrics': ErrorMetricsWidget(widget_id='error_metrics'),
+            'error_trends': TrendVisualizationWidget(widget_id='error_trends'),
+            'system_health': SystemHealthWidget(widget_id='system_health')
         }
         
     def get_dashboard_data(self, widget_ids: Optional[List[str]] = None) -> Dict[str, Any]:

@@ -30,6 +30,7 @@ export interface ComputeStackProps extends cdk.StackProps {
   readonly approvalsTable: dynamodb.ITable;
   readonly onboardingStateTable: dynamodb.ITable;
   readonly onboardingAuditLogTable: dynamodb.ITable;
+  readonly errorMetricsTable: dynamodb.ITable;
   readonly externalIdKmsKey: kms.IKey;
   readonly dataBucket: s3.IBucket;
   readonly externalId: string;
@@ -49,6 +50,8 @@ export class ComputeStack extends cdk.Stack {
   public readonly monitoringFunction: lambda.Function;
   public readonly approvalWorkflowFunction: lambda.Function;
   public readonly accountDiscoveryFunction: lambda.Function;
+  public readonly errorResolutionFunction: lambda.Function;
+  public readonly monitoringDashboardFunction: lambda.Function;
 
   constructor(scope: Construct, id: string, props: ComputeStackProps) {
     super(scope, id, props);
@@ -311,6 +314,52 @@ export class ComputeStack extends cdk.Stack {
       description: 'Discovers new AWS accounts and initiates automated onboarding',
     });
 
+    // ========================================
+    // Lambda Function: Error Resolution Handler
+    // ========================================
+    // Purpose: Handles API error detection, classification, and automated resolution
+    // Requirements: REQ-1.1, REQ-1.2, REQ-2.1, REQ-2.2, REQ-2.3 (Error Resolution)
+    this.errorResolutionFunction = new lambda.Function(this, 'ErrorResolutionFunction', {
+      functionName: 'rds-dashboard-error-resolution',
+      runtime: lambda.Runtime.PYTHON_3_11,
+      handler: 'handler.lambda_handler',
+      code: lambda.Code.fromAsset('../lambda/error-resolution'),
+      role: lambdaExecutionRole,
+      timeout: cdk.Duration.minutes(5),
+      memorySize: 1024,
+      environment: {
+        ERROR_METRICS_TABLE: props.errorMetricsTable.tableName,
+        AUDIT_LOG_TABLE: props.auditLogTable.tableName,
+        SNS_TOPIC_ARN: snsTopicArn,
+        CLOUDWATCH_NAMESPACE: 'RDSDashboard/ErrorResolution',
+        LOG_LEVEL: 'INFO',
+        CACHE_TTL: '300'
+      },
+      description: 'Detects, classifies, and automatically resolves API errors',
+    });
+
+    // ========================================
+    // Lambda Function: Monitoring Dashboard
+    // ========================================
+    // Purpose: Provides real-time monitoring dashboard and metrics collection
+    // Requirements: REQ-3.1, REQ-3.2, REQ-3.3 (Monitoring Dashboard)
+    this.monitoringDashboardFunction = new lambda.Function(this, 'MonitoringDashboardFunction', {
+      functionName: 'rds-dashboard-monitoring',
+      runtime: lambda.Runtime.PYTHON_3_11,
+      handler: 'handler.lambda_handler',
+      code: lambda.Code.fromAsset('../lambda/monitoring'),
+      role: lambdaExecutionRole,
+      timeout: cdk.Duration.minutes(2),
+      memorySize: 512,
+      environment: {
+        ERROR_METRICS_TABLE: props.errorMetricsTable.tableName,
+        METRICS_CACHE_TABLE: props.metricsCacheTable.tableName,
+        CLOUDWATCH_NAMESPACE: 'RDSDashboard/Monitoring',
+        LOG_LEVEL: 'INFO'
+      },
+      description: 'Provides real-time monitoring dashboard and metrics collection',
+    });
+
     // Grant permissions for account discovery Lambda
     onboardingStateTable.grantReadWriteData(this.accountDiscoveryFunction);
     onboardingAuditLogTable.grantReadWriteData(this.accountDiscoveryFunction);
@@ -339,6 +388,30 @@ export class ComputeStack extends cdk.Stack {
         'secretsmanager:TagResource',
       ],
       resources: [`arn:aws:secretsmanager:${this.region}:${this.account}:secret:rds-dashboard/external-ids/*`],
+    }));
+
+    // Grant permissions for error resolution Lambda
+    props.auditLogTable.grantReadWriteData(this.errorResolutionFunction);
+    props.errorMetricsTable.grantReadWriteData(this.errorResolutionFunction);
+    props.errorMetricsTable.grantReadWriteData(this.monitoringDashboardFunction);
+    props.metricsCacheTable.grantReadWriteData(this.monitoringDashboardFunction);
+
+    // Grant CloudWatch permissions for error resolution
+    this.errorResolutionFunction.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'cloudwatch:PutMetricData',
+        'cloudwatch:GetMetricStatistics',
+        'cloudwatch:ListMetrics'
+      ],
+      resources: ['*'],
+    }));
+
+    // Grant SNS permissions for alerting
+    this.errorResolutionFunction.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['sns:Publish'],
+      resources: [snsTopicArn],
     }));
 
     // ========================================
@@ -414,6 +487,30 @@ export class ComputeStack extends cdk.Stack {
       value: this.accountDiscoveryFunction.functionName,
       description: 'Name of Account Discovery Lambda function',
       exportName: 'AccountDiscoveryFunctionName',
+    });
+
+    new cdk.CfnOutput(this, 'ErrorResolutionFunctionArn', {
+      value: this.errorResolutionFunction.functionArn,
+      description: 'ARN of Error Resolution Lambda function',
+      exportName: 'ErrorResolutionFunctionArn',
+    });
+
+    new cdk.CfnOutput(this, 'ErrorResolutionFunctionName', {
+      value: this.errorResolutionFunction.functionName,
+      description: 'Name of Error Resolution Lambda function',
+      exportName: 'ErrorResolutionFunctionName',
+    });
+
+    new cdk.CfnOutput(this, 'MonitoringDashboardFunctionArn', {
+      value: this.monitoringDashboardFunction.functionArn,
+      description: 'ARN of Monitoring Dashboard Lambda function',
+      exportName: 'MonitoringDashboardFunctionArn',
+    });
+
+    new cdk.CfnOutput(this, 'MonitoringDashboardFunctionName', {
+      value: this.monitoringDashboardFunction.functionName,
+      description: 'Name of Monitoring Dashboard Lambda function',
+      exportName: 'MonitoringDashboardFunctionName',
     });
   }
 }

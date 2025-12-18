@@ -25,8 +25,8 @@ from unittest.mock import Mock, patch, MagicMock
 import sys
 import os
 
-# Add the error-resolution directory to the path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'error-resolution'))
+# Add the error_resolution directory to the path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'error_resolution'))
 
 from log_search_handler import (
     lambda_handler, handle_search_logs, handle_get_log_statistics,

@@ -22,8 +22,8 @@ import time
 import sys
 import os
 
-# Add error-resolution module to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'error-resolution'))
+# Add error_resolution module to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'error_resolution'))
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'monitoring'))
 
 from error_detector import get_error_detector

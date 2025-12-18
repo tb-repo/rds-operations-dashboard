@@ -29,8 +29,8 @@ import uuid
 import sys
 import os
 
-# Add the error-resolution directory to the path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'error-resolution'))
+# Add the error_resolution directory to the path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'error_resolution'))
 
 from audit_system import (
     AuditTrail, AuditEvent, AuditEventType, AuditSeverity,

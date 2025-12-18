@@ -10,6 +10,8 @@ export interface ApiStackProps extends cdk.StackProps {
   monitoringFunction: lambda.IFunction;
   approvalWorkflowFunction: lambda.IFunction;
   discoveryFunction: lambda.IFunction;
+  errorResolutionFunction: lambda.IFunction;
+  monitoringDashboardFunction: lambda.IFunction;
 }
 
 export class ApiStack extends cdk.Stack {
@@ -81,6 +83,8 @@ export class ApiStack extends cdk.Stack {
     this.createMonitoringEndpoints(props.monitoringFunction);
     this.createApprovalEndpoints(props.approvalWorkflowFunction);
     this.createDiscoveryEndpoints(props.discoveryFunction);
+    this.createErrorResolutionEndpoints(props.errorResolutionFunction);
+    this.createMonitoringDashboardEndpoints(props.monitoringDashboardFunction);
 
     // Outputs
     new cdk.CfnOutput(this, 'ApiUrl', {
@@ -648,6 +652,88 @@ export class ApiStack extends cdk.Stack {
     trigger.addMethod(
       'POST',
       new apigateway.LambdaIntegration(discoveryFunction, {
+        proxy: true,
+      }),
+      {
+        apiKeyRequired: true,
+      }
+    );
+  }
+
+  private createErrorResolutionEndpoints(errorResolutionFunction: lambda.IFunction): void {
+    // /error-resolution resource
+    const errorResolution = this.api.root.addResource('error-resolution');
+
+    // POST /error-resolution/detect - Detect and classify errors
+    const detect = errorResolution.addResource('detect');
+    detect.addMethod(
+      'POST',
+      new apigateway.LambdaIntegration(errorResolutionFunction, {
+        proxy: true,
+      }),
+      {
+        apiKeyRequired: true,
+      }
+    );
+
+    // POST /error-resolution/resolve - Resolve errors automatically
+    const resolve = errorResolution.addResource('resolve');
+    resolve.addMethod(
+      'POST',
+      new apigateway.LambdaIntegration(errorResolutionFunction, {
+        proxy: true,
+      }),
+      {
+        apiKeyRequired: true,
+      }
+    );
+
+    // GET /error-resolution/statistics - Get error resolution statistics
+    const statistics = errorResolution.addResource('statistics');
+    statistics.addMethod(
+      'GET',
+      new apigateway.LambdaIntegration(errorResolutionFunction, {
+        proxy: true,
+      }),
+      {
+        apiKeyRequired: true,
+      }
+    );
+  }
+
+  private createMonitoringDashboardEndpoints(monitoringDashboardFunction: lambda.IFunction): void {
+    // /monitoring-dashboard resource
+    const monitoringDashboard = this.api.root.addResource('monitoring-dashboard');
+
+    // GET /monitoring-dashboard/metrics - Get real-time metrics
+    const metrics = monitoringDashboard.addResource('metrics');
+    metrics.addMethod(
+      'GET',
+      new apigateway.LambdaIntegration(monitoringDashboardFunction, {
+        proxy: true,
+      }),
+      {
+        apiKeyRequired: true,
+      }
+    );
+
+    // GET /monitoring-dashboard/health - Get system health status
+    const health = monitoringDashboard.addResource('health');
+    health.addMethod(
+      'GET',
+      new apigateway.LambdaIntegration(monitoringDashboardFunction, {
+        proxy: true,
+      }),
+      {
+        apiKeyRequired: true,
+      }
+    );
+
+    // GET /monitoring-dashboard/trends - Get error trends
+    const trends = monitoringDashboard.addResource('trends');
+    trends.addMethod(
+      'GET',
+      new apigateway.LambdaIntegration(monitoringDashboardFunction, {
         proxy: true,
       }),
       {

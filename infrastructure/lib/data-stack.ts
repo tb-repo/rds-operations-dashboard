@@ -47,6 +47,7 @@ export class DataStack extends cdk.Stack {
   public readonly approvalsTable: dynamodb.Table;
   public readonly onboardingStateTable: dynamodb.Table;
   public readonly onboardingAuditLogTable: dynamodb.Table;
+  public readonly errorMetricsTable: dynamodb.Table;
   public readonly externalIdKmsKey: kms.Key;
   public readonly dataBucket: s3.Bucket;
 
@@ -349,6 +350,60 @@ export class DataStack extends cdk.Stack {
     Tags.of(this.onboardingAuditLogTable).add('Project', 'RDSDashboard');
     Tags.of(this.onboardingAuditLogTable).add('CostCenter', 'DBA-Team');
     Tags.of(this.onboardingAuditLogTable).add('Feature', 'AutomatedOnboarding');
+
+    // ========================================
+    // DynamoDB Table: Error Metrics
+    // ========================================
+    // Purpose: Store error metrics for API error resolution and monitoring
+    // Requirements: REQ-3.1, REQ-3.2 (Error Monitoring and Metrics)
+    this.errorMetricsTable = new dynamodb.Table(this, 'ErrorMetricsTable', {
+      tableName: 'ErrorMetrics',
+      partitionKey: {
+        name: 'service',
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'timestamp',
+        type: dynamodb.AttributeType.STRING,
+      },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      encryption: dynamodb.TableEncryption.AWS_MANAGED,
+      pointInTimeRecovery: true,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      timeToLiveAttribute: 'ttl', // Auto-delete old metrics after 30 days
+    });
+
+    Tags.of(this.errorMetricsTable).add('Project', 'RDSDashboard');
+    Tags.of(this.errorMetricsTable).add('CostCenter', 'DBA-Team');
+    Tags.of(this.errorMetricsTable).add('Feature', 'ErrorResolution');
+
+    // GSI: Query errors by category and time
+    this.errorMetricsTable.addGlobalSecondaryIndex({
+      indexName: 'category-timestamp-index',
+      partitionKey: {
+        name: 'error_category',
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'timestamp',
+        type: dynamodb.AttributeType.STRING,
+      },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // GSI: Query errors by severity
+    this.errorMetricsTable.addGlobalSecondaryIndex({
+      indexName: 'severity-timestamp-index',
+      partitionKey: {
+        name: 'severity',
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: 'timestamp',
+        type: dynamodb.AttributeType.STRING,
+      },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
 
     // ========================================
     // KMS Key: External ID Encryption

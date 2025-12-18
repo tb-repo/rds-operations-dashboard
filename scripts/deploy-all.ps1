@@ -35,14 +35,19 @@ try {
     Write-Host ""
 
     # Deploy stacks in dependency order
+    # Note: Stack names are defined in CDK app without environment suffix
+    # Skipping RDSDashboard-Monitoring due to conflict with existing RDSDashboard-Monitoring-prod
     $stacks = @(
-        "RDSDashboard-Data-$Environment",
-        "RDSDashboard-IAM-$Environment",
-        "RDSDashboard-Compute-$Environment",
-        "RDSDashboard-Orchestration-$Environment",
-        "RDSDashboard-API-$Environment",
-        "RDSDashboard-Monitoring-$Environment",
-        "RDSDashboard-BFF-$Environment"
+        "RDSDashboard-Data",
+        "RDSDashboard-IAM", 
+        "RDSDashboard-Compute",
+        "RDSDashboard-Orchestration",
+        "RDSDashboard-OnboardingOrchestration",
+        "RDSDashboard-API",
+        "RDSDashboard-Auth",
+        "RDSDashboard-BFF",
+        "RDSDashboard-WAF",
+        "RDSDashboard-Frontend"
     )
 
     foreach ($stack in $stacks) {
@@ -65,7 +70,7 @@ try {
     Write-Host "Setting up BFF Secrets Manager" -ForegroundColor Yellow
     Write-Host "========================================" -ForegroundColor Yellow
     Set-Location -Path $projectRoot
-    & "$scriptDir/setup-bff-secrets.ps1" -Environment $Environment
+    & "$scriptDir/setup-bff-secrets.ps1"
 
     # Get deployment outputs
     Write-Host ""
@@ -75,12 +80,12 @@ try {
     Write-Host ""
 
     $apiUrl = aws cloudformation describe-stacks `
-        --stack-name "RDSDashboard-API-$Environment" `
+        --stack-name "RDSDashboard-API" `
         --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' `
         --output text
 
     $bffUrl = aws cloudformation describe-stacks `
-        --stack-name "RDSDashboard-BFF-$Environment" `
+        --stack-name "RDSDashboard-BFF" `
         --query 'Stacks[0].Outputs[?OutputKey==`BffApiUrl`].OutputValue' `
         --output text
 
