@@ -62,11 +62,18 @@ export default function ApprovalsDashboard() {
   const { data: pendingApprovals, isLoading: pendingLoading } = useQuery({
     queryKey: ['pending-approvals'],
     queryFn: async () => {
-      const response = await apiClient.post('/api/approvals', {
-        operation: 'get_pending_approvals',
-        user_email: user?.email
-      })
-      return response.data as ApprovalRequest[]
+      try {
+        const response = await apiClient.post('/api/approvals', {
+          operation: 'get_pending_approvals',
+          user_email: user?.email
+        })
+        // Ensure we return an array
+        const data = response.data
+        return Array.isArray(data) ? data as ApprovalRequest[] : []
+      } catch (error) {
+        console.error('Failed to fetch pending approvals:', error)
+        return [] // Return empty array on error
+      }
     },
     refetchInterval: 30000, // Refresh every 30 seconds
   })
@@ -75,11 +82,18 @@ export default function ApprovalsDashboard() {
   const { data: myRequests, isLoading: myRequestsLoading } = useQuery({
     queryKey: ['my-requests'],
     queryFn: async () => {
-      const response = await apiClient.post('/api/approvals', {
-        operation: 'get_user_requests',
-        user_email: user?.email
-      })
-      return response.data as ApprovalRequest[]
+      try {
+        const response = await apiClient.post('/api/approvals', {
+          operation: 'get_user_requests',
+          user_email: user?.email
+        })
+        // Ensure we return an array
+        const data = response.data
+        return Array.isArray(data) ? data as ApprovalRequest[] : []
+      } catch (error) {
+        console.error('Failed to fetch user requests:', error)
+        return [] // Return empty array on error
+      }
     },
     refetchInterval: 30000,
   })
@@ -351,8 +365,8 @@ export default function ApprovalsDashboard() {
   }
 
   const displayRequests = selectedTab === 'pending' 
-    ? pendingApprovals || []
-    : myRequests || []
+    ? (Array.isArray(pendingApprovals) ? pendingApprovals : [])
+    : (Array.isArray(myRequests) ? myRequests : [])
 
   return (
     <div className="space-y-6">
@@ -395,10 +409,11 @@ export default function ApprovalsDashboard() {
             <div>
               <p className="text-sm text-gray-600">Approved Today</p>
               <p className="text-2xl font-bold text-green-600">
-                {myRequests?.filter(r => 
+                {Array.isArray(myRequests) ? myRequests.filter(r => 
                   r.status === 'approved' && 
-                  new Date(r.approved_at!).toDateString() === new Date().toDateString()
-                ).length || 0}
+                  r.approved_at &&
+                  new Date(r.approved_at).toDateString() === new Date().toDateString()
+                ).length : 0}
               </p>
             </div>
             <CheckCircle className="w-8 h-8 text-green-600" />
@@ -410,7 +425,7 @@ export default function ApprovalsDashboard() {
             <div>
               <p className="text-sm text-gray-600">Rejected</p>
               <p className="text-2xl font-bold text-red-600">
-                {myRequests?.filter(r => r.status === 'rejected').length || 0}
+                {Array.isArray(myRequests) ? myRequests.filter(r => r.status === 'rejected').length : 0}
               </p>
             </div>
             <XCircle className="w-8 h-8 text-red-600" />

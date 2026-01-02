@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Approvals Dashboard Fix</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .success {
+            background-color: #d4edda;
+            border-color: #c3e6cb;
+        }
+        .error {
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test Approvals Dashboard Fix</h1>
+    <p>This page tests the fixes for the "v.filter is not a function" error in the Approvals Dashboard.</p>
+
+    <div class="test-section">
+        <h2>Test 1: Array Handling</h2>
+        <p>Testing that the code properly handles non-array responses:</p>
+        <button onclick="testArrayHandling()">Run Array Handling Test</button>
+        <div id="arrayTest"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 2: API Endpoint</h2>
+        <p>Testing the new approvals endpoint:</p>
+        <button onclick="testApprovalsEndpoint()">Test Approvals Endpoint</button>
+        <div id="apiTest"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 3: Dashboard Access</h2>
+        <p>Test accessing the dashboard directly:</p>
+        <button onclick="openDashboard()">Open Dashboard</button>
+        <div id="dashboardTest"></div>
+    </div>
+
+    <script>
+        function testArrayHandling() {
+            const testDiv = document.getElementById('arrayTest');
+            testDiv.innerHTML = '<p>Running array handling tests...</p>';
+            
+            try {
+                // Test the same logic used in ApprovalsDashboard.tsx
+                const testCases = [
+                    { data: [], expected: 0 },
+                    { data: [{ status: 'approved' }, { status: 'rejected' }], expected: 1 },
+                    { data: null, expected: 0 },
+                    { data: undefined, expected: 0 },
+                    { data: { error: 'API Error' }, expected: 0 },
+                    { data: 'string response', expected: 0 }
+                ];
+                
+                let results = [];
+                
+                testCases.forEach((testCase, index) => {
+                    try {
+                        // Simulate the fixed logic from ApprovalsDashboard.tsx
+                        const safeArray = Array.isArray(testCase.data) ? testCase.data : [];
+                        const filteredCount = safeArray.filter(r => r.status === 'approved').length;
+                        
+                        const passed = filteredCount === testCase.expected;
+                        results.push(`Test ${index + 1}: ${passed ? 'PASS' : 'FAIL'} - Expected: ${testCase.expected}, Got: ${filteredCount}`);
+                    } catch (error) {
+                        results.push(`Test ${index + 1}: FAIL - Error: ${error.message}`);
+                    }
+                });
+                
+                const allPassed = results.every(r => r.includes('PASS'));
+                testDiv.className = 'test-section ' + (allPassed ? 'success' : 'error');
+                testDiv.innerHTML = `
+                    <h3>Array Handling Test Results</h3>
+                    <pre>${results.join('\n')}</pre>
+                    <p><strong>${allPassed ? 'All tests passed! ✅' : 'Some tests failed! ❌'}</strong></p>
+                `;
+            } catch (error) {
+                testDiv.className = 'test-section error';
+                testDiv.innerHTML = `<p><strong>Test failed with error:</strong> ${error.message}</p>`;
+            }
+        }
+
+        async function testApprovalsEndpoint() {
+            const testDiv = document.getElementById('apiTest');
+            testDiv.innerHTML = '<p>Testing approvals endpoint...</p>';
+            
+            try {
+                const response = await fetch('https://08mqqv008c.execute-api.ap-southeast-1.amazonaws.com/api/approvals', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Origin': 'https://d2qvaswtmn22om.cloudfront.net'
+                    },
+                    body: JSON.stringify({
+                        operation: 'get_pending_approvals',
+                        user_email: 'test@example.com'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    testDiv.className = 'test-section success';
+                    testDiv.innerHTML = `
+                        <h3>API Test Results</h3>
+                        <p><strong>Status:</strong> ${response.status} ${response.statusText}</p>
+                        <p><strong>Response is array:</strong> ${Array.isArray(data) ? 'Yes ✅' : 'No ❌'}</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                } else {
+                    testDiv.className = 'test-section error';
+                    testDiv.innerHTML = `
+                        <h3>API Test Results</h3>
+                        <p><strong>Status:</strong> ${response.status} ${response.statusText}</p>
+                        <p><strong>Error:</strong> This might be expected due to authentication requirements</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                }
+            } catch (error) {
+                testDiv.className = 'test-section error';
+                testDiv.innerHTML = `
+                    <h3>API Test Results</h3>
+                    <p><strong>Error:</strong> ${error.message}</p>
+                    <p>This might be due to CORS or authentication requirements.</p>
+                `;
+            }
+        }
+
+        function openDashboard() {
+            const testDiv = document.getElementById('dashboardTest');
+            testDiv.innerHTML = `
+                <p>Opening dashboard in new tab...</p>
+                <p><a href="https://d2qvaswtmn22om.cloudfront.net" target="_blank">Click here if it doesn't open automatically</a></p>
+                <p><strong>Instructions:</strong></p>
+                <ol>
+                    <li>Navigate to the Approvals tab</li>
+                    <li>Check if the page loads without the "v.filter is not a function" error</li>
+                    <li>The page should show "No pending approvals found" or sample data</li>
+                </ol>
+            `;
+            window.open('https://d2qvaswtmn22om.cloudfront.net', '_blank');
+        }
+
+        // Run array handling test automatically on page load
+        window.onload = function() {
+            testArrayHandling();
+        };
+    </script>
+</body>
+</html>
