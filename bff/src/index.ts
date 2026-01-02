@@ -9,8 +9,17 @@ import { createUserRoutes } from './routes/users'
 import { createErrorResolutionRoutes } from './routes/error-resolution'
 import { logger } from './utils/logger'
 import { auditService } from './services/audit'
+import { initializeCorsConfig } from './config/cors'
+import { createOptionsHandler, addCorsHeaders, handleAllOptions } from './middleware/options-handler'
 import axios from 'axios'
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager'
+
+// Helper function to create standard headers for internal API calls
+const createInternalApiHeaders = (apiKey: string) => ({
+  'x-api-key': apiKey,
+  'User-Agent': 'RDS-Dashboard-BFF/1.0',
+  'x-bff-request': 'true'
+})
 
 // Load environment variables
 dotenv.config()
@@ -90,13 +99,63 @@ app.use(helmet({
   },
 }))
 
-// CORS configuration
-const corsOptions = {
-  origin: FRONTEND_URL,
-  credentials: true,
-  optionsSuccessStatus: 200,
+// CORS configuration - Environment-aware with enhanced security
+let corsConfig: { allowedOrigins: string[], corsOptions: any, originValidator?: any }
+try {
+  corsConfig = initializeCorsConfig()
+  logger.info('CORS configuration loaded', { 
+    allowedOrigins: corsConfig.allowedOrigins,
+    environment: process.env.NODE_ENV || 'development'
+  })
+} catch (error: any) {
+  logger.error('Failed to initialize CORS configuration, using fallback', { error: error.message })
+  // Fallback CORS configuration for emergency situations
+  const fallbackOrigins = [
+    process.env.FRONTEND_URL || 'https://d2qvaswtmn22om.cloudfront.net',
+    'http://localhost:3000'
+  ].filter(Boolean)
+  
+  corsConfig = {
+    allowedOrigins: fallbackOrigins,
+    corsOptions: {
+      origin: fallbackOrigins,
+      credentials: true,
+      optionsSuccessStatus: 200
+    }
+  }
 }
-app.use(cors(corsOptions))
+
+app.use(cors(corsConfig.corsOptions))
+
+// Enhanced OPTIONS handling middleware
+const optionsConfig = {
+  allowedOrigins: corsConfig.allowedOrigins,
+  allowedMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Api-Key',
+    'X-Amz-Date',
+    'X-Amz-Security-Token',
+    'X-Requested-With',
+    'Accept',
+    'Origin',
+    'Cache-Control'
+  ],
+  exposedHeaders: [
+    'X-Total-Count',
+    'X-Request-ID',
+    'X-RateLimit-Limit',
+    'X-RateLimit-Remaining',
+    'X-RateLimit-Reset'
+  ],
+  maxAge: 86400,
+  credentials: true
+}
+
+// Apply enhanced OPTIONS handling
+app.use(createOptionsHandler(optionsConfig))
+app.use(addCorsHeaders(optionsConfig))
 
 // Body parsing middleware
 app.use(express.json())
@@ -154,6 +213,41 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() })
 })
 
+// CORS configuration endpoint (for debugging - no auth required)
+app.get('/cors-config', (req, res) => {
+  res.json({
+    allowedOrigins: corsConfig.allowedOrigins,
+    environment: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString(),
+    corsEnabled: true
+  })
+})
+
+// Security monitoring endpoint (no auth required for monitoring)
+app.get('/security/cors-stats', (req, res) => {
+  if (!corsConfig.originValidator) {
+    return res.status(503).json({
+      error: 'Origin validator not available',
+      message: 'CORS security monitoring is not enabled'
+    })
+  }
+  
+  const stats = corsConfig.originValidator.getSecurityStats()
+  const recentEvents = corsConfig.originValidator.getRecentSecurityEvents(10)
+  
+  res.json({
+    statistics: stats,
+    recentEvents: recentEvents.map((event: any) => ({
+      type: event.type,
+      origin: event.origin,
+      reason: event.reason,
+      timestamp: event.timestamp
+      // Exclude sensitive info like IP/userAgent from public endpoint
+    })),
+    timestamp: new Date().toISOString()
+  })
+})
+
 // Health metrics endpoint for specific instances
 app.get(
   '/api/health/:instanceId',
@@ -164,7 +258,7 @@ app.get(
       const response = await axios.get(
         `${INTERNAL_API_URL}/health/${req.params.instanceId}`,
         {
-          headers: { 'x-api-key': INTERNAL_API_KEY },
+          headers: createInternalApiHeaders(INTERNAL_API_KEY),
         }
       )
       res.json(response.data)
@@ -188,7 +282,7 @@ app.get(
   async (req: Request, res: Response) => {
     try {
       const response = await axios.get(`${INTERNAL_API_URL}/instances`, {
-        headers: { 'x-api-key': INTERNAL_API_KEY },
+        headers: createInternalApiHeaders(INTERNAL_API_KEY),
         params: req.query,
       })
       res.json(response.data)
@@ -207,7 +301,7 @@ app.get(
       const response = await axios.get(
         `${INTERNAL_API_URL}/instances/${req.params.id}`,
         {
-          headers: { 'x-api-key': INTERNAL_API_KEY },
+          headers: createInternalApiHeaders(INTERNAL_API_KEY),
         }
       )
       res.json(response.data)
@@ -227,7 +321,7 @@ app.get(
   async (req: Request, res: Response) => {
     try {
       const response = await axios.get(`${INTERNAL_API_URL}/metrics`, {
-        headers: { 'x-api-key': INTERNAL_API_KEY },
+        headers: createInternalApiHeaders(INTERNAL_API_KEY),
         params: req.query,
       })
       res.json(response.data)
@@ -247,7 +341,7 @@ app.get(
   async (req: Request, res: Response) => {
     try {
       const response = await axios.get(`${INTERNAL_API_URL}/compliance`, {
-        headers: { 'x-api-key': INTERNAL_API_KEY },
+        headers: createInternalApiHeaders(INTERNAL_API_KEY),
         params: req.query,
       })
       res.json(response.data)
@@ -267,7 +361,7 @@ app.get(
   async (req: Request, res: Response) => {
     try {
       const response = await axios.get(`${INTERNAL_API_URL}/costs`, {
-        headers: { 'x-api-key': INTERNAL_API_KEY },
+        headers: createInternalApiHeaders(INTERNAL_API_KEY),
         params: req.query,
       })
       res.json(response.data)
@@ -290,13 +384,15 @@ app.post(
         ...req.body,
         requested_by: req.user?.email,
         user_id: req.user?.userId,
+        user_groups: req.user?.groups || [],
+        user_permissions: req.user?.permissions || [],
       }
 
       const response = await axios.post(
         `${INTERNAL_API_URL}/operations`,
         requestBody,
         {
-          headers: { 'x-api-key': INTERNAL_API_KEY },
+          headers: createInternalApiHeaders(INTERNAL_API_KEY),
         }
       )
       
@@ -350,7 +446,7 @@ app.post(
         `${INTERNAL_API_URL}/cloudops`,
         requestBody,
         {
-          headers: { 'x-api-key': INTERNAL_API_KEY },
+          headers: createInternalApiHeaders(INTERNAL_API_KEY),
         }
       )
       
@@ -398,7 +494,7 @@ app.post(
         `${INTERNAL_API_URL}/discovery/trigger`,
         req.body,
         {
-          headers: { 'x-api-key': INTERNAL_API_KEY },
+          headers: createInternalApiHeaders(INTERNAL_API_KEY),
         }
       )
       
@@ -439,7 +535,7 @@ app.post(
         req.body,
         {
           headers: { 
-            'x-api-key': INTERNAL_API_KEY,
+            ...createInternalApiHeaders(INTERNAL_API_KEY),
             'Content-Type': 'application/json',
           },
         }
@@ -486,7 +582,7 @@ app.post(
         requestBody,
         {
           headers: { 
-            'x-api-key': INTERNAL_API_KEY,
+            ...createInternalApiHeaders(INTERNAL_API_KEY),
             'Content-Type': 'application/json',
           },
         }
@@ -563,9 +659,7 @@ app.get(
       const response = await axios.get(
         `${INTERNAL_API_URL}/approvals`,
         {
-          headers: { 
-            'x-api-key': INTERNAL_API_KEY,
-          },
+          headers: createInternalApiHeaders(INTERNAL_API_KEY),
           params: {
             user_email: req.user?.email,
           },
@@ -625,8 +719,16 @@ app.use((err: Error, req: Request, res: Response, next: any) => {
   })
 })
 
+// Catch-all OPTIONS handler for any unmatched routes
+app.options('*', handleAllOptions(optionsConfig))
+
 // 404 handler
 app.use((req: Request, res: Response) => {
+  // Handle OPTIONS requests that weren't caught earlier
+  if (req.method === 'OPTIONS') {
+    return handleAllOptions(optionsConfig)(req, res)
+  }
+  
   res.status(404).json({
     error: 'Not Found',
     message: 'The requested resource was not found',

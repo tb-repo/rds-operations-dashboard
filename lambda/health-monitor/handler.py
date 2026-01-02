@@ -72,7 +72,7 @@ def lambda_handler(event, context):
             
     logger.info('Health monitor service started',
                 function_name=context.function_name if context else 'local',
-                aws_request_id=correlation_id)
+                aws_request_id=CorrelationContext.get())
     
     try:
         # Load configuration

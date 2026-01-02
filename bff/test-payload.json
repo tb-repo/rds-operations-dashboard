@@ -1,0 +1,11 @@
+{
+  "httpMethod": "GET",
+  "path": "/",
+  "headers": {
+    "Host": "08mqqv008c.execute-api.ap-southeast-1.amazonaws.com"
+  },
+  "requestContext": {
+    "httpMethod": "GET",
+    "path": "/prod/"
+  }
+}

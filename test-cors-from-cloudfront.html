@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CORS Test from CloudFront</title>
+</head>
+<body>
+    <h1>CORS Test from CloudFront</h1>
+    <div id="results"></div>
+    
+    <script>
+        const resultsDiv = document.getElementById('results');
+        
+        function log(message) {
+            console.log(message);
+            resultsDiv.innerHTML += '<p>' + message + '</p>';
+        }
+        
+        async function testCORS() {
+            log('Testing CORS from CloudFront origin...');
+            log('Current origin: ' + window.location.origin);
+            
+            const apiUrl = 'https://08mqqv008c.execute-api.ap-southeast-1.amazonaws.com/prod/';
+            
+            try {
+                log('Testing basic GET request...');
+                const response = await fetch(apiUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                log('Response status: ' + response.status);
+                log('Response headers: ' + JSON.stringify([...response.headers.entries()]));
+                
+                const data = await response.text();
+                log('Response data: ' + data);
+                
+            } catch (error) {
+                log('Error: ' + error.message);
+            }
+            
+            try {
+                log('Testing OPTIONS preflight request...');
+                const optionsResponse = await fetch(apiUrl, {
+                    method: 'OPTIONS',
+                    headers: {
+                        'Origin': window.location.origin,
+                        'Access-Control-Request-Method': 'GET',
+                        'Access-Control-Request-Headers': 'Content-Type'
+                    }
+                });
+                
+                log('OPTIONS response status: ' + optionsResponse.status);
+                log('OPTIONS response headers: ' + JSON.stringify([...optionsResponse.headers.entries()]));
+                
+            } catch (error) {
+                log('OPTIONS error: ' + error.message);
+            }
+        }
+        
+        // Run test when page loads
+        testCORS();
+    </script>
+</body>
+</html>

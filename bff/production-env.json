@@ -1,0 +1,9 @@
+﻿{
+    "Variables":  {
+                      "NODE_ENV":  "production",
+                      "INTERNAL_API_URL":  "https://api.example.com",
+                      "COGNITO_REGION":  "ap-southeast-1",
+                      "COGNITO_USER_POOL_ID":  "ap-southeast-1_example",
+                      "CORS_ORIGINS":  "https://d2qvaswtmn22om.cloudfront.net"
+                  }
+}

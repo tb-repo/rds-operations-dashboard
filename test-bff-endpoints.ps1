@@ -2,7 +2,7 @@
 Write-Host "Testing BFF Endpoints..." -ForegroundColor Cyan
 
 # Get the BFF URL
-$BFF_URL = "https://km9ww1hh3k.execute-api.ap-southeast-1.amazonaws.com/prod"
+$BFF_URL = "https://km9ww1hh3k.execute-api.ap-southeast-1.amazonaws.com"
 
 # Test health endpoint (no auth required)
 Write-Host "Testing /health endpoint..." -ForegroundColor Yellow

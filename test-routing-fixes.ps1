@@ -1,7 +1,7 @@
 # Test Routing Fixes
 # Tests the deployed application to see which endpoints are working
 
-$BFF_URL = "https://km9ww1hh3k.execute-api.ap-southeast-1.amazonaws.com/prod"
+$BFF_URL = "https://km9ww1hh3k.execute-api.ap-southeast-1.amazonaws.com"
 $FRONTEND_URL = "https://d2qvaswtmn22om.cloudfront.net"
 
 Write-Host "`n========================================" -ForegroundColor Cyan

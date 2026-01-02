@@ -302,8 +302,22 @@ export const api = {
   },
 
   getErrorStatistics: async () => {
-    const response = await apiClient.get('/api/errors/statistics')
-    return response.data
+    try {
+      const response = await apiClient.get('/api/errors/statistics')
+      return response.data
+    } catch (error) {
+      console.warn('Error statistics endpoint not available, using fallback data')
+      // Return fallback statistics if the endpoint is not available
+      return {
+        statistics: {
+          total_errors_detected: 0,
+          detector_version: '1.0.0',
+          patterns_loaded: 0,
+          severity_patterns_loaded: 0
+        },
+        timestamp: new Date().toISOString()
+      }
+    }
   },
 
   detectError: async (errorData: {

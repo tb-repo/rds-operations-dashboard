@@ -1,0 +1,1 @@
+{\n  \"Variables\": {\n    \"CORS_ORIGINS\": \"https://staging-d2qvaswtmn22om.cloudfront.net,http://localhost:3000,http://localhost:5173\",\n    \"NODE_ENV\": \"staging\"\n  }\n}

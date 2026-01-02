@@ -1,0 +1,25 @@
+﻿{
+    "RootCauses":  [
+                       "Missing API Gateway routes prevent requests from reaching Lambda functions",
+                       "Missing DynamoDB tables will cause Lambda functions to fail when trying to access data"
+                   ],
+    "Recommendations":  [
+                            "Create API Gateway route for /instances",
+                            "Create API Gateway route for /compliance",
+                            "Create API Gateway route for /costs",
+                            "Create API Gateway route for /instances",
+                            "Create API Gateway route for /compliance",
+                            "Create API Gateway route for /costs",
+                            "Create DynamoDB table: rds_compliance"
+                        ],
+    "Timestamp":  "20251224-164818",
+    "Issues":  [
+                   "Missing API Gateway route: /instances",
+                   "Missing API Gateway route: /compliance",
+                   "Missing API Gateway route: /costs",
+                   "Missing API Gateway route: /instances",
+                   "Missing API Gateway route: /compliance",
+                   "Missing API Gateway route: /costs",
+                   "Missing DynamoDB table: rds_compliance"
+               ]
+}

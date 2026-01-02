@@ -1,0 +1,14 @@
+﻿{
+    "Recommendations":  [
+                            "Create missing DynamoDB table: rds_compliance"
+                        ],
+    "Issues":  [
+                   "Missing route: /instances",
+                   "Missing route: /compliance",
+                   "Missing route: /costs",
+                   "Missing table: rds_compliance",
+                   "Endpoint /instances failed: Forbidden",
+                   "Endpoint /compliance failed: Forbidden",
+                   "Endpoint /costs failed: Forbidden"
+               ]
+}

@@ -27,7 +27,7 @@ Write-Host ""
 # Test 2: BFF Health Check
 Write-Host "Test 2: BFF Health Check..." -ForegroundColor Yellow
 try {
-    $response = Invoke-RestMethod -Uri "https://km9ww1hh3k.execute-api.ap-southeast-1.amazonaws.com/prod/health" -Method GET
+    $response = Invoke-RestMethod -Uri "https://km9ww1hh3k.execute-api.ap-southeast-1.amazonaws.com/health" -Method GET
     Write-Host "✅ BFF is healthy: $($response.status)" -ForegroundColor Green
 } catch {
     Write-Host "❌ BFF health check failed: $($_.Exception.Message)" -ForegroundColor Red

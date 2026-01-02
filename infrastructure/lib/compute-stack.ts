@@ -323,7 +323,7 @@ export class ComputeStack extends cdk.Stack {
       functionName: 'rds-dashboard-error-resolution',
       runtime: lambda.Runtime.PYTHON_3_11,
       handler: 'handler.lambda_handler',
-      code: lambda.Code.fromAsset('../lambda/error-resolution'),
+      code: lambda.Code.fromAsset('../lambda/error_resolution'),
       role: lambdaExecutionRole,
       timeout: cdk.Duration.minutes(5),
       memorySize: 1024,

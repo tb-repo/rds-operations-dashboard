@@ -52,18 +52,22 @@ export class BffStack extends cdk.Stack {
     // ========================================
     // Secrets Manager - Store API Key
     // ========================================
-    this.apiSecret = new secretsmanager.Secret(this, 'ApiSecret', {
-      secretName: 'rds-dashboard-api-key',
-      description: 'API Gateway key for RDS Dashboard internal API',
-      generateSecretString: {
-        secretStringTemplate: JSON.stringify({ 
-          apiUrl: props.internalApiUrl,
-          description: 'RDS Dashboard API credentials'
-        }),
-        generateStringKey: 'apiKey',
-        excludeCharacters: '"@/\\\'',
+    
+    // Import the existing API key from the API stack
+    const existingApiKey = apigateway.ApiKey.fromApiKeyId(this, 'ImportedApiKey', props.apiKeyId);
+    
+    // Create a custom resource to get the API key value and store it in Secrets Manager
+    const apiKeyValueProvider = new cdk.CustomResource(this, 'ApiKeyValueProvider', {
+      serviceToken: this.createApiKeyValueProviderFunction().functionArn,
+      properties: {
+        ApiKeyId: props.apiKeyId,
+        SecretName: 'rds-dashboard-api-key',
+        ApiUrl: props.internalApiUrl,
       },
     });
+
+    // Reference the secret that will be created by the custom resource
+    this.apiSecret = secretsmanager.Secret.fromSecretNameV2(this, 'ApiSecret', 'rds-dashboard-api-key') as secretsmanager.Secret;
 
     // ========================================
     // IAM Role for BFF Lambda
@@ -172,7 +176,7 @@ export class BffStack extends cdk.Stack {
         allowCredentials: true,
       },
       deployOptions: {
-        stageName: 'prod',
+        stageName: '$default',
         throttlingRateLimit: 1000,
         throttlingBurstLimit: 2000,
         loggingLevel: apigateway.MethodLoggingLevel.INFO,
@@ -225,5 +229,149 @@ export class BffStack extends cdk.Stack {
       description: 'API Secret ARN in Secrets Manager',
       exportName: 'ApiSecretArn'
     });
+  }
+
+  /**
+   * Creates a Lambda function that retrieves the API key value and stores it in Secrets Manager
+   */
+  private createApiKeyValueProviderFunction(): lambda.Function {
+    return new lambda.Function(this, 'ApiKeyValueProviderFunction', {
+      functionName: 'rds-dashboard-api-key-provider',
+      runtime: lambda.Runtime.PYTHON_3_11,
+      handler: 'index.handler',
+      timeout: cdk.Duration.minutes(5),
+      code: lambda.Code.fromInline(`
+import json
+import boto3
+import cfnresponse
+import logging
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+def handler(event, context):
+    """
+    Custom resource handler that:
+    1. Gets the API key value from API Gateway
+    2. Stores it in Secrets Manager with proper JSON format
+    3. Handles CREATE, UPDATE, and DELETE events
+    """
+    
+    try:
+        request_type = event['RequestType']
+        properties = event['ResourceProperties']
+        api_key_id = properties['ApiKeyId']
+        secret_name = properties['SecretName']
+        api_url = properties['ApiUrl']
+        
+        apigateway_client = boto3.client('apigateway')
+        secrets_client = boto3.client('secretsmanager')
+        
+        if request_type in ['Create', 'Update']:
+            # Get the API key value from API Gateway
+            logger.info(f"Getting API key value for key ID: {api_key_id}")
+            
+            response = apigateway_client.get_api_key(
+                apiKeyId=api_key_id,
+                includeValue=True
+            )
+            
+            api_key_value = response['value']
+            logger.info(f"Retrieved API key value (length: {len(api_key_value)})")
+            
+            # Create the secret value in proper JSON format
+            secret_value = {
+                "apiKey": api_key_value,
+                "apiUrl": api_url,
+                "description": "RDS Dashboard API credentials - Auto-generated",
+                "createdBy": "CDK-CustomResource",
+                "lastUpdated": context.aws_request_id
+            }
+            
+            # Store in Secrets Manager
+            try:
+                # Try to update existing secret first
+                secrets_client.update_secret(
+                    SecretId=secret_name,
+                    SecretString=json.dumps(secret_value),
+                    Description=f"API Gateway key for RDS Dashboard internal API - Auto-managed"
+                )
+                logger.info(f"Updated existing secret: {secret_name}")
+                
+            except secrets_client.exceptions.ResourceNotFoundException:
+                # Create new secret if it doesn't exist
+                secrets_client.create_secret(
+                    Name=secret_name,
+                    SecretString=json.dumps(secret_value),
+                    Description=f"API Gateway key for RDS Dashboard internal API - Auto-managed"
+                )
+                logger.info(f"Created new secret: {secret_name}")
+            
+            # Return success
+            cfnresponse.send(event, context, cfnresponse.SUCCESS, {
+                'SecretName': secret_name,
+                'ApiKeyId': api_key_id,
+                'Message': f'Successfully stored API key in Secrets Manager'
+            })
+            
+        elif request_type == 'Delete':
+            # Optionally delete the secret (commented out for safety)
+            # secrets_client.delete_secret(SecretId=secret_name, ForceDeleteWithoutRecovery=True)
+            logger.info(f"Delete requested for secret: {secret_name} (skipped for safety)")
+            
+            cfnresponse.send(event, context, cfnresponse.SUCCESS, {
+                'Message': 'Delete completed (secret preserved for safety)'
+            })
+            
+    except Exception as e:
+        logger.error(f"Error in API key provider: {str(e)}")
+        cfnresponse.send(event, context, cfnresponse.FAILED, {
+            'Error': str(e)
+        })
+`),
+      role: this.createApiKeyProviderRole(),
+      description: 'Custom resource to retrieve API key value and store in Secrets Manager',
+    });
+  }
+
+  /**
+   * Creates IAM role for the API key provider function
+   */
+  private createApiKeyProviderRole(): iam.Role {
+    const role = new iam.Role(this, 'ApiKeyProviderRole', {
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      description: 'IAM role for API key provider custom resource',
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
+      ],
+    });
+
+    // Grant permission to read API key values
+    role.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'apigateway:GET',
+      ],
+      resources: [
+        `arn:aws:apigateway:${this.region}::/apikeys/*`,
+      ],
+    }));
+
+    // Grant permission to manage secrets
+    role.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'secretsmanager:CreateSecret',
+        'secretsmanager:UpdateSecret',
+        'secretsmanager:DeleteSecret',
+        'secretsmanager:GetSecretValue',
+        'secretsmanager:DescribeSecret',
+      ],
+      resources: [
+        `arn:aws:secretsmanager:${this.region}:${this.account}:secret:rds-dashboard-api-key*`,
+      ],
+    }));
+
+    return role;
   }
 }

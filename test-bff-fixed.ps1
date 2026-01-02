@@ -1,7 +1,7 @@
 # Test BFF endpoints after fix
 Write-Host "Testing BFF endpoints after API key fix..." -ForegroundColor Cyan
 
-$BFF_URL = "https://km9ww1hh3k.execute-api.ap-southeast-1.amazonaws.com/prod"
+$BFF_URL = "https://km9ww1hh3k.execute-api.ap-southeast-1.amazonaws.com"
 
 # Test 1: Health endpoint (no auth)
 Write-Host "`n1. Testing health endpoint..." -ForegroundColor Yellow

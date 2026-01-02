@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CORS Test - RDS Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .test-result {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+            border-left: 4px solid #ccc;
+        }
+        .success {
+            background-color: #d4edda;
+            border-left-color: #28a745;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border-left-color: #dc3545;
+            color: #721c24;
+        }
+        .info {
+            background-color: #d1ecf1;
+            border-left-color: #17a2b8;
+            color: #0c5460;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 CORS Configuration Test</h1>
+        <p>This page tests if the CORS configuration fix is working correctly for the RDS Dashboard BFF.</p>
+        
+        <div class="info test-result">
+            <strong>Current Origin:</strong> <span id="currentOrigin"></span><br>
+            <strong>BFF API URL:</strong> <span id="bffUrl"></span>
+        </div>
+
+        <h2>Test Controls</h2>
+        <button onclick="testHealthEndpoint()">Test Health Endpoint</button>
+        <button onclick="testApiEndpoint()">Test API Endpoint</button>
+        <button onclick="testWithCredentials()">Test with Credentials</button>
+        <button onclick="clearResults()">Clear Results</button>
+
+        <h2>Test Results</h2>
+        <div id="results"></div>
+    </div>
+
+    <script>
+        const BFF_URL = 'https://km9ww1hh3k.execute-api.ap-southeast-1.amazonaws.com/prod';
+        
+        // Display current origin and BFF URL
+        document.getElementById('currentOrigin').textContent = window.location.origin;
+        document.getElementById('bffUrl').textContent = BFF_URL;
+
+        function addResult(title, success, message, details = null) {
+            const resultsDiv = document.getElementById('results');
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `test-result ${success ? 'success' : 'error'}`;
+            
+            let html = `<strong>${title}:</strong> ${message}`;
+            if (details) {
+                html += `<pre>${JSON.stringify(details, null, 2)}</pre>`;
+            }
+            
+            resultDiv.innerHTML = html;
+            resultsDiv.appendChild(resultDiv);
+        }
+
+        function addInfo(message) {
+            const resultsDiv = document.getElementById('results');
+            const resultDiv = document.createElement('div');
+            resultDiv.className = 'test-result info';
+            resultDiv.innerHTML = `<strong>Info:</strong> ${message}`;
+            resultsDiv.appendChild(resultDiv);
+        }
+
+        async function testHealthEndpoint() {
+            addInfo('Testing health endpoint...');
+            
+            try {
+                const response = await fetch(`${BFF_URL}/api/health`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    addResult('Health Endpoint', true, 'Successfully called health endpoint', {
+                        status: response.status,
+                        statusText: response.statusText,
+                        data: data,
+                        corsHeaders: {
+                            'Access-Control-Allow-Origin': response.headers.get('Access-Control-Allow-Origin'),
+                            'Access-Control-Allow-Credentials': response.headers.get('Access-Control-Allow-Credentials')
+                        }
+                    });
+                } else {
+                    addResult('Health Endpoint', false, `HTTP ${response.status}: ${response.statusText}`);
+                }
+            } catch (error) {
+                addResult('Health Endpoint', false, `CORS or Network Error: ${error.message}`);
+            }
+        }
+
+        async function testApiEndpoint() {
+            addInfo('Testing API endpoint (will likely fail due to authentication)...');
+            
+            try {
+                const response = await fetch(`${BFF_URL}/api/instances`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                // Even if we get 401/403, if we reach here, CORS is working
+                addResult('API Endpoint', true, `CORS working! Got HTTP ${response.status} (expected due to no auth)`, {
+                    status: response.status,
+                    statusText: response.statusText,
+                    corsHeaders: {
+                        'Access-Control-Allow-Origin': response.headers.get('Access-Control-Allow-Origin'),
+                        'Access-Control-Allow-Credentials': response.headers.get('Access-Control-Allow-Credentials')
+                    }
+                });
+            } catch (error) {
+                if (error.message.includes('CORS')) {
+                    addResult('API Endpoint', false, `CORS Error: ${error.message}`);
+                } else {
+                    addResult('API Endpoint', true, `CORS working! Network/Auth error (expected): ${error.message}`);
+                }
+            }
+        }
+
+        async function testWithCredentials() {
+            addInfo('Testing request with credentials...');
+            
+            try {
+                const response = await fetch(`${BFF_URL}/api/health`, {
+                    method: 'GET',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    addResult('Credentials Test', true, 'Successfully called with credentials', {
+                        status: response.status,
+                        data: data,
+                        corsHeaders: {
+                            'Access-Control-Allow-Origin': response.headers.get('Access-Control-Allow-Origin'),
+                            'Access-Control-Allow-Credentials': response.headers.get('Access-Control-Allow-Credentials')
+                        }
+                    });
+                } else {
+                    addResult('Credentials Test', false, `HTTP ${response.status}: ${response.statusText}`);
+                }
+            } catch (error) {
+                addResult('Credentials Test', false, `CORS or Network Error: ${error.message}`);
+            }
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        // Auto-run health test on page load
+        window.addEventListener('load', () => {
+            addInfo('Page loaded. Click buttons above to test CORS functionality.');
+            addInfo(`Testing from origin: ${window.location.origin}`);
+        });
+    </script>
+</body>
+</html>

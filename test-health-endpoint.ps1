@@ -12,7 +12,7 @@ $instanceId = $inventory.Items[0].instance_id.S
 Write-Host "Instance ID: $instanceId" -ForegroundColor Green
 
 # Test the BFF health endpoint
-$bffUrl = "https://km9ww1hh3k.execute-api.ap-southeast-1.amazonaws.com/prod"
+$bffUrl = "https://km9ww1hh3k.execute-api.ap-southeast-1.amazonaws.com"
 $healthUrl = "$bffUrl/api/health/$instanceId"
 
 Write-Host "`nTesting: $healthUrl" -ForegroundColor Yellow

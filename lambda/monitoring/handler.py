@@ -72,13 +72,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     logger.info(f"Processing {http_method} {path}")
     
     # Route to appropriate handler
-    if http_method == 'GET' and path.endswith('/dashboard'):
+    # Handle API Gateway paths that include the resource prefix
+    if http_method == 'GET' and (path.endswith('/dashboard') or path.endswith('/metrics')):
         response = handle_get_dashboard(event)
     elif http_method == 'GET' and '/dashboard/widgets/' in path:
         response = handle_get_widget(event)
     elif http_method == 'GET' and path.endswith('/metrics/real-time'):
         response = handle_get_real_time_metrics(event)
-    elif http_method == 'GET' and path.endswith('/metrics/trends'):
+    elif http_method == 'GET' and (path.endswith('/metrics/trends') or path.endswith('/trends')):
         response = handle_get_trends(event)
     elif http_method == 'GET' and path.endswith('/health'):
         response = handle_health_check(event)

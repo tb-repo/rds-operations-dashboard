@@ -1,0 +1,10 @@
+{
+  "httpMethod": "GET",
+  "path": "/health",
+  "headers": {
+    "Origin": "https://d2qvaswtmn22om.cloudfront.net",
+    "Content-Type": "application/json"
+  },
+  "queryStringParameters": null,
+  "body": null
+}

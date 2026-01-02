@@ -213,17 +213,30 @@ export class AuthorizationMiddleware {
 
       // Check if instance is production
       if (instance.environment === 'production') {
-        logger.info('Blocking operation on production instance', {
+        // Check if production operations are enabled via environment variable
+        const enableProductionOps = process.env.ENABLE_PRODUCTION_OPERATIONS === 'true'
+        
+        if (!enableProductionOps) {
+          logger.info('Blocking operation on production instance', {
+            userId,
+            instanceId,
+            operation,
+            environment: instance.environment,
+          })
+
+          return {
+            allowed: false,
+            reason: 'Operations on production instances are not allowed. Use CloudOps to generate a change request instead.',
+          }
+        }
+        
+        // Production operations are enabled - allow with warning
+        logger.warn('Allowing operation on production instance (production operations enabled)', {
           userId,
           instanceId,
           operation,
           environment: instance.environment,
         })
-
-        return {
-          allowed: false,
-          reason: 'Operations on production instances are not allowed. Use CloudOps to generate a change request instead.',
-        }
       }
 
       // Allow operations on non-production instances

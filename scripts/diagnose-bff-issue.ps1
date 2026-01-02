@@ -20,7 +20,7 @@ Write-Host "`n2. Testing Internal API with API Key..." -ForegroundColor Yellow
 $secret = aws secretsmanager get-secret-value --secret-id rds-dashboard-api-key-prod --query SecretString --output text | ConvertFrom-Json
 $headers = @{ 'x-api-key' = $secret.apiKey; 'Content-Type' = 'application/json' }
 try {
-    $response = Invoke-WebRequest -Uri 'https://0pjyr8lkpl.execute-api.ap-southeast-1.amazonaws.com/prod/instances' -Method GET -Headers $headers -UseBasicParsing
+    $response = Invoke-WebRequest -Uri 'https://0pjyr8lkpl.execute-api.ap-southeast-1.amazonaws.com/instances' -Method GET -Headers $headers -UseBasicParsing
     Write-Host "✓ Internal API works (Status: $($response.StatusCode))" -ForegroundColor Green
 } catch {
     Write-Host "✗ Internal API failed" -ForegroundColor Red

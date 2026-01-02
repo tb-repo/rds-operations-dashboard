@@ -85,7 +85,16 @@ class OperationsHandler:
             operation = body.get('operation') or body.get('operation_type')
             instance_id = body.get('instance_id')
             parameters = body.get('parameters', {})
-            user_identity = event.get('requestContext', {}).get('identity', {})
+            
+            # Extract user identity from request body (passed by BFF)
+            user_identity = {
+                'user_id': body.get('user_id'),
+                'requested_by': body.get('requested_by'),
+                'user_groups': body.get('user_groups', []),
+                'user_permissions': body.get('user_permissions', []),
+                # Fallback to API Gateway context if needed
+                **event.get('requestContext', {}).get('identity', {})
+            }
             
             # Validate request
             validation_result = self._validate_request(
@@ -100,14 +109,26 @@ class OperationsHandler:
             if not instance:
                 return self._error_response(404, f"Instance {instance_id} not found")
             
-            # Check environment (must be non-production)
+            # Check environment and apply production safeguards
             environment = self.classifier.get_environment(instance)
             if environment == 'production':
-                return self._error_response(
-                    403,
-                    "Operations not allowed on production instances. "
-                    "Please create a CloudOps request."
+                # Check if production operations are enabled
+                operations_config = self.config.get('operations', {})
+                enable_production_ops = operations_config.get('enable_production_operations', False)
+                
+                if not enable_production_ops:
+                    return self._error_response(
+                        403,
+                        "Operations not allowed on production instances. "
+                        "Please create a CloudOps request or enable production operations in config."
+                    )
+                
+                # Allow production operations with additional validation
+                production_result = self._validate_production_operation(
+                    operation, instance, parameters, user_identity
                 )
+                if not production_result['allowed']:
+                    return self._error_response(403, production_result['reason'])
             
             # Execute operation
             logger.info(f"Executing {operation} on {instance_id}")
@@ -145,39 +166,227 @@ class OperationsHandler:
         Returns:
             dict: Validation result with 'valid' and 'error' keys
         """
+        # Enhanced logging for debugging
+        logger.info("Validating operation request", {
+            'operation': operation,
+            'instance_id': instance_id,
+            'user_identity': {
+                'user_id': user_identity.get('user_id'),
+                'user_groups': user_identity.get('user_groups', []),
+                'requested_by': user_identity.get('requested_by')
+            },
+            'parameters_keys': list(parameters.keys()) if parameters else []
+        })
+        
         # Check operation type
         if not operation:
-            return {'valid': False, 'error': 'Operation type is required'}
+            return {'valid': False, 'error': 'Operation type is required. Please specify one of: ' + ', '.join(self.ALLOWED_OPERATIONS)}
         
         if operation not in self.ALLOWED_OPERATIONS:
             return {
                 'valid': False,
-                'error': f"Operation '{operation}' not allowed. "
-                        f"Allowed: {', '.join(self.ALLOWED_OPERATIONS)}"
+                'error': f"Operation '{operation}' is not supported. Allowed operations: {', '.join(self.ALLOWED_OPERATIONS)}"
             }
         
         # Check instance ID
         if not instance_id:
-            return {'valid': False, 'error': 'Instance ID is required'}
+            return {'valid': False, 'error': 'Instance ID is required. Please provide a valid RDS instance identifier.'}
+        
+        # Check user identity
+        if not user_identity.get('user_id') and not user_identity.get('requested_by'):
+            logger.warn("Missing user identity in request", {
+                'user_identity_keys': list(user_identity.keys()) if user_identity else []
+            })
+            return {
+                'valid': False, 
+                'error': 'User identity is required. Please ensure you are properly authenticated.'
+            }
         
         # Validate operation-specific parameters
         if operation == 'create_snapshot':
             if not parameters.get('snapshot_id'):
-                return {'valid': False, 'error': 'snapshot_id is required'}
+                return {
+                    'valid': False, 
+                    'error': 'Snapshot ID is required for create_snapshot operation. Please provide a unique snapshot identifier.'
+                }
         
         elif operation == 'modify_backup_window':
             if not parameters.get('backup_window'):
-                return {'valid': False, 'error': 'backup_window is required'}
+                return {
+                    'valid': False, 
+                    'error': 'Backup window is required for modify_backup_window operation. Please provide a backup window in HH:MM-HH:MM format.'
+                }
             
             # Validate backup window format (HH:MM-HH:MM)
             backup_window = parameters['backup_window']
             if not self._validate_backup_window_format(backup_window):
                 return {
                     'valid': False,
-                    'error': 'Invalid backup_window format. Use HH:MM-HH:MM'
+                    'error': f'Invalid backup window format: "{backup_window}". Please use HH:MM-HH:MM format (e.g., "03:00-04:00").'
                 }
         
+        elif operation == 'enable_storage_autoscaling':
+            if not parameters.get('max_allocated_storage'):
+                return {
+                    'valid': False,
+                    'error': 'Maximum allocated storage is required for enable_storage_autoscaling operation. Please specify max_allocated_storage in GB.'
+                }
+        
+        elif operation == 'modify_storage':
+            if not any([parameters.get('allocated_storage'), parameters.get('storage_type'), parameters.get('iops')]):
+                return {
+                    'valid': False,
+                    'error': 'At least one storage parameter is required for modify_storage operation: allocated_storage, storage_type, or iops.'
+                }
+        
+        logger.info("Request validation passed", {
+            'operation': operation,
+            'instance_id': instance_id,
+            'user_id': user_identity.get('user_id')
+        })
+        
         return {'valid': True, 'error': None}
+    
+    def _validate_production_operation(
+        self,
+        operation: str,
+        instance: Dict[str, Any],
+        parameters: Dict[str, Any],
+        user_identity: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Validate operations on production instances with additional safeguards.
+        
+        Args:
+            operation: Operation type
+            instance: Instance details
+            parameters: Operation parameters
+            user_identity: User identity
+            
+        Returns:
+            dict: Validation result with 'allowed' and 'reason' keys
+        """
+        instance_id = instance['instance_id']
+        operations_config = self.config.get('operations', {})
+        
+        # Get operation lists from configuration
+        safe_operations = operations_config.get('safe_production_operations', [
+            'create_snapshot',
+            'modify_backup_window', 
+            'enable_storage_autoscaling'
+        ])
+        
+        risky_operations = operations_config.get('risky_production_operations', [
+            'reboot',
+            'reboot_instance',
+            'stop_instance',
+            'start_instance',
+            'modify_storage'
+        ])
+        
+        require_admin = operations_config.get('require_admin_for_risky_operations', True)
+        require_confirmation = operations_config.get('require_confirmation_for_destructive_operations', True)
+        
+        # Enhanced logging for debugging
+        logger.info(f"Validating production operation {operation} on {instance_id}", {
+            'operation': operation,
+            'instance_id': instance_id,
+            'user_identity': {
+                'user_id': user_identity.get('user_id'),
+                'user_groups': user_identity.get('user_groups', []),
+                'requested_by': user_identity.get('requested_by')
+            },
+            'safe_operations': safe_operations,
+            'risky_operations': risky_operations,
+            'require_admin': require_admin,
+            'require_confirmation': require_confirmation
+        })
+        
+        # Allow safe operations
+        if operation in safe_operations:
+            logger.info(f"Allowing safe production operation {operation} on {instance_id}")
+            return {'allowed': True, 'reason': None}
+        
+        # For risky operations, require additional validation
+        if operation in risky_operations:
+            # Check if admin privileges are required
+            if require_admin:
+                user_groups = user_identity.get('user_groups', [])
+                is_admin = any(group in ['Admin', 'DBA'] for group in user_groups)
+                
+                logger.info(f"Checking admin privileges for {operation}", {
+                    'user_groups': user_groups,
+                    'is_admin': is_admin,
+                    'instance_id': instance_id,
+                    'required_groups': ['Admin', 'DBA']
+                })
+                
+                if not is_admin:
+                    error_msg = (
+                        f"Operation '{operation}' on production instance requires Admin or DBA privileges. "
+                        f"User groups: {user_groups}. Required groups: Admin or DBA. "
+                        f"Please contact your administrator to be added to the appropriate group."
+                    )
+                    logger.warn(f"Access denied for {operation} - insufficient privileges", {
+                        'user_groups': user_groups,
+                        'required_groups': ['Admin', 'DBA'],
+                        'instance_id': instance_id,
+                        'user_id': user_identity.get('user_id')
+                    })
+                    return {
+                        'allowed': False,
+                        'reason': error_msg
+                    }
+            
+            # Additional safeguards for destructive operations
+            if require_confirmation and operation in ['stop_instance', 'reboot', 'reboot_instance']:
+                confirm_production = parameters.get('confirm_production', False)
+                logger.info(f"Checking production confirmation for {operation}", {
+                    'confirm_production': confirm_production,
+                    'instance_id': instance_id,
+                    'operation': operation
+                })
+                
+                if not confirm_production:
+                    error_msg = (
+                        f"Production {operation} requires explicit confirmation. "
+                        f"Please include 'confirm_production': true in the parameters. "
+                        f"This is a safety measure to prevent accidental operations on production instances."
+                    )
+                    logger.warn(f"Access denied for {operation} - missing production confirmation", {
+                        'confirm_production': confirm_production,
+                        'instance_id': instance_id,
+                        'operation': operation
+                    })
+                    return {
+                        'allowed': False,
+                        'reason': error_msg
+                    }
+            
+            logger.warn(f"Allowing risky production operation {operation} on {instance_id}", {
+                'operation': operation,
+                'instance_id': instance_id,
+                'user_id': user_identity.get('user_id'),
+                'user_groups': user_identity.get('user_groups', [])
+            })
+            return {'allowed': True, 'reason': None}
+        
+        # Block unknown operations
+        error_msg = (
+            f"Operation '{operation}' is not allowed on production instances. "
+            f"Allowed safe operations: {', '.join(safe_operations)}. "
+            f"Allowed risky operations (with admin privileges): {', '.join(risky_operations)}."
+        )
+        logger.warn(f"Access denied for {operation} - operation not allowed on production", {
+            'operation': operation,
+            'instance_id': instance_id,
+            'safe_operations': safe_operations,
+            'risky_operations': risky_operations
+        })
+        return {
+            'allowed': False,
+            'reason': error_msg
+        }
     
     def _validate_backup_window_format(self, window: str) -> bool:
         """

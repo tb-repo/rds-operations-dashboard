@@ -84,6 +84,24 @@
     "log_retention_days": 7
   },
   
+  "operations": {
+    "enable_production_operations": true,
+    "require_admin_for_risky_operations": true,
+    "require_confirmation_for_destructive_operations": true,
+    "safe_production_operations": [
+      "create_snapshot",
+      "modify_backup_window", 
+      "enable_storage_autoscaling"
+    ],
+    "risky_production_operations": [
+      "reboot",
+      "reboot_instance", 
+      "stop_instance",
+      "start_instance",
+      "modify_storage"
+    ]
+  },
+  
   "tags": {
     "Project": "DBMRDSDashboard",
     "ManagedBy": "CDK",

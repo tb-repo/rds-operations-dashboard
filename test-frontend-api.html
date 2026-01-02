@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frontend API Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-result { margin: 10px 0; padding: 10px; border-radius: 5px; }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        .info { background-color: #d1ecf1; color: #0c5460; }
+        pre { background-color: #f8f9fa; padding: 10px; border-radius: 5px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>Frontend API Test</h1>
+    <p>Testing the same API endpoints that the frontend calls...</p>
+    
+    <div id="results"></div>
+
+    <script>
+        const API_BASE_URL = 'https://km9ww1hh3k.execute-api.ap-southeast-1.amazonaws.com/prod';
+        const resultsDiv = document.getElementById('results');
+
+        function addResult(type, title, content) {
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.innerHTML = `<h3>${title}</h3><pre>${content}</pre>`;
+            resultsDiv.appendChild(div);
+        }
+
+        async function testEndpoint(endpoint, description) {
+            try {
+                addResult('info', `Testing ${description}`, `Calling: ${API_BASE_URL}${endpoint}`);
+                
+                const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    addResult('success', `✅ ${description} - SUCCESS`, 
+                        `Status: ${response.status}\nResponse: ${JSON.stringify(data, null, 2)}`);
+                } else {
+                    const errorText = await response.text();
+                    addResult('error', `❌ ${description} - FAILED`, 
+                        `Status: ${response.status}\nError: ${errorText}`);
+                }
+            } catch (error) {
+                addResult('error', `❌ ${description} - NETWORK ERROR`, 
+                    `Error: ${error.message}`);
+            }
+        }
+
+        async function runTests() {
+            addResult('info', 'Starting API Tests', 'Testing the same endpoints the frontend uses...');
+            
+            await testEndpoint('/api/errors/dashboard', 'Error Dashboard');
+            await testEndpoint('/api/errors/statistics', 'Error Statistics');
+            
+            addResult('info', 'Tests Complete', 'All API endpoint tests finished.');
+        }
+
+        // Run tests when page loads
+        runTests();
+    </script>
+</body>
+</html>

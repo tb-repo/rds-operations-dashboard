@@ -72,6 +72,37 @@ export class WafStack extends cdk.Stack {
     const rules: wafv2.CfnWebACL.RuleProperty[] = [];
     let priority = 0;
 
+    // Rule 0: Allow BFF requests (whitelist)
+    rules.push({
+      name: 'AllowBFFRequests',
+      priority: priority++,
+      statement: {
+        byteMatchStatement: {
+          searchString: 'true',
+          fieldToMatch: {
+            singleHeader: {
+              name: 'x-bff-request',
+            },
+          },
+          textTransformations: [
+            {
+              priority: 0,
+              type: 'NONE',
+            },
+          ],
+          positionalConstraint: 'EXACTLY',
+        },
+      },
+      action: {
+        allow: {},
+      },
+      visibilityConfig: {
+        sampledRequestsEnabled: true,
+        cloudWatchMetricsEnabled: true,
+        metricName: 'AllowBFFRequests',
+      },
+    });
+
     // Rule 1: Rate limiting
     rules.push({
       name: 'RateLimitRule',

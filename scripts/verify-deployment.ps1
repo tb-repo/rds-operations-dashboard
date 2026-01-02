@@ -12,7 +12,7 @@ $allPassed = $true
 # Test 1: BFF Health Check
 Write-Host "Test 1: BFF Health Check..." -ForegroundColor Yellow
 try {
-    $response = Invoke-RestMethod -Uri "https://km9ww1hh3k.execute-api.ap-southeast-1.amazonaws.com/prod/health" -Method GET
+    $response = Invoke-RestMethod -Uri "https://km9ww1hh3k.execute-api.ap-southeast-1.amazonaws.com/health" -Method GET
     if ($response.status -eq "healthy") {
         Write-Host "✅ BFF is healthy" -ForegroundColor Green
     } else {
@@ -28,7 +28,7 @@ Write-Host ""
 # Test 2: BFF Authentication Required
 Write-Host "Test 2: BFF Authentication..." -ForegroundColor Yellow
 try {
-    $response = Invoke-RestMethod -Uri "https://km9ww1hh3k.execute-api.ap-southeast-1.amazonaws.com/prod/api/instances" -Method GET -ErrorAction Stop
+    $response = Invoke-RestMethod -Uri "https://km9ww1hh3k.execute-api.ap-southeast-1.amazonaws.com/api/instances" -Method GET -ErrorAction Stop
     Write-Host "❌ BFF should require authentication" -ForegroundColor Red
     $allPassed = $false
 } catch {
