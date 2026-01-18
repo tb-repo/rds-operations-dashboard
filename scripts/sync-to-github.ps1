@@ -75,7 +75,7 @@ try {
     if (-not $remotes) {
         Write-Host "⚠️  No remote repository configured." -ForegroundColor Yellow
         Write-Host "To add a remote, run:" -ForegroundColor Yellow
-        Write-Host "  git remote add origin <your-github-repo-url>" -ForegroundColor Cyan
+        Write-Host "  git remote add origin [your-github-repo-url]" -ForegroundColor Cyan
         exit 1
     }
 
@@ -108,7 +108,7 @@ try {
 
 } catch {
     Write-Host "`n❌ Error: $($_.Exception.Message)" -ForegroundColor Red
-    Write-Host "`n💡 Troubleshooting tips:" -ForegroundColor Yellow
+    Write-Host "Troubleshooting tips:" -ForegroundColor Yellow
     Write-Host "   1. Make sure you have push access to the repository" -ForegroundColor Gray
     Write-Host "   2. Try pulling changes first: git pull origin $Branch" -ForegroundColor Gray
     Write-Host "   3. Check if you need to authenticate with GitHub" -ForegroundColor Gray
