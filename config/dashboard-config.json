@@ -102,6 +102,77 @@
     ]
   },
   
+  "environment_classification": {
+    "default_environment": "non-production",
+    "environment_tag_names": [
+      "Environment",
+      "Env", 
+      "ENV",
+      "environment",
+      "env",
+      "Environ",
+      "environ",
+      "ENVIRON",
+      "Stage",
+      "stage",
+      "STAGE"
+    ],
+    "naming_patterns": {
+      "production": [
+        "^prod-",
+        "^prd-",
+        "^p-",
+        "-prod$",
+        "-prd$",
+        "-production$"
+      ],
+      "development": [
+        "^dev-",
+        "^development-",
+        "-dev$",
+        "-development$"
+      ],
+      "test": [
+        "^test-",
+        "^tst-",
+        "^qa-",
+        "-test$",
+        "-tst$",
+        "-qa$"
+      ],
+      "staging": [
+        "^stg-",
+        "^staging-",
+        "^stage-",
+        "-stg$",
+        "-staging$"
+      ],
+      "poc": [
+        "^poc-",
+        "^demo-",
+        "^exp-",
+        "^experiment-",
+        "-poc$",
+        "-demo$"
+      ],
+      "sandbox": [
+        "^sandbox-",
+        "^sbx-",
+        "-sandbox$",
+        "-sbx$"
+      ]
+    },
+    "account_mappings": {
+      "_comment": "Map AWS account IDs to environments - customize as needed",
+      "123456789012": "production",
+      "234567890123": "development",
+      "345678901234": "staging"
+    },
+    "instance_mappings": {
+      "_comment": "Manual mapping of specific instance IDs - customize as needed"
+    }
+  },
+  
   "tags": {
     "Project": "DBMRDSDashboard",
     "ManagedBy": "CDK",

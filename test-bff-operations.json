@@ -1,0 +1,8 @@
+{
+  "httpMethod": "POST",
+  "path": "/api/operations",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": "{\"operation\":\"create_snapshot\",\"instance_id\":\"test-instance\",\"parameters\":{\"snapshot_id\":\"test-snapshot\"}}"
+}

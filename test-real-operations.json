@@ -1,0 +1,8 @@
+{
+  "httpMethod": "POST",
+  "path": "/api/operations",
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": "{\"operation\":\"create_snapshot\",\"instance_id\":\"tb-pg-db1\",\"parameters\":{\"snapshot_id\":\"test-snapshot-20260104\"},\"user_id\":\"test-user\",\"requested_by\":\"integration-test\"}"
+}

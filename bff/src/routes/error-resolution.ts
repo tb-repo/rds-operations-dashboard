@@ -22,9 +22,10 @@ import { Router, Request, Response } from 'express'
 import axios from 'axios'
 import { logger } from '../utils/logger'
 import { auditService } from '../services/audit'
+import { ServiceDiscovery } from '../services/service-discovery'
 
 export function createErrorResolutionRoutes(
-  internalApiUrl: string,
+  serviceDiscovery: ServiceDiscovery,
   getApiKey: () => string
 ): Router {
   const router = Router()
@@ -41,12 +42,13 @@ export function createErrorResolutionRoutes(
       // Call monitoring dashboard metrics endpoint with graceful fallback
       let response
       try {
-        response = await axios.get(
-          `${internalApiUrl}/monitoring-dashboard/metrics`,
+        response = await serviceDiscovery.callService(
+          'monitoring',
+          '/dashboard/metrics',
           {
-            headers: { 'x-api-key': getApiKey() },
+            apiKey: getApiKey(),
             params: { widgets: widgets?.join(',') },
-            timeout: 3000, // Short timeout for quick fallback
+            timeout: 3000 // Short timeout for quick fallback
           }
         )
         
@@ -56,7 +58,7 @@ export function createErrorResolutionRoutes(
           widgets: widgets?.length || 'all',
         })
 
-        return res.json(response.data)
+        return res.json(response)
       } catch (error: any) {
         // Provide fallback dashboard data
         logger.warn('Metrics endpoint unavailable, providing fallback data', {
@@ -151,10 +153,11 @@ export function createErrorResolutionRoutes(
       // Try to get data from monitoring dashboard metrics endpoint with graceful fallback
       let response
       try {
-        response = await axios.get(
-          `${internalApiUrl}/monitoring-dashboard/metrics`,
+        response = await serviceDiscovery.callService(
+          'monitoring',
+          '/dashboard/metrics',
           {
-            headers: { 'x-api-key': getApiKey() },
+            apiKey: getApiKey(),
             timeout: 3000, // Short timeout for quick fallback
             params: { 
               widgets: 'error_metrics,system_health' // Request specific widgets for statistics
@@ -163,7 +166,7 @@ export function createErrorResolutionRoutes(
         )
         
         // Transform monitoring data to statistics format expected by frontend
-        const dashboardData = response.data
+        const dashboardData = response
         const errorMetrics = dashboardData?.widgets?.error_metrics
         const systemHealth = dashboardData?.widgets?.system_health
 
@@ -277,21 +280,20 @@ export function createErrorResolutionRoutes(
         },
       }
 
-      const response = await axios.post(
-        `${internalApiUrl}/error-resolution/detect`,
-        requestBody,
+      const response = await serviceDiscovery.callService(
+        'error-resolution',
+        '/detect',
         {
-          headers: { 
-            'x-api-key': getApiKey(),
-            'Content-Type': 'application/json',
-          },
+          method: 'POST',
+          data: requestBody,
+          apiKey: getApiKey()
         }
       )
 
       logger.info('Error detection requested', {
         userId: req.user?.userId,
         email: req.user?.email,
-        errorId: response.data.error_id,
+        errorId: response.error_id,
         service: req.body.service,
         statusCode: req.body.status_code,
       })
@@ -302,21 +304,21 @@ export function createErrorResolutionRoutes(
         req.user?.email || 'unknown',
         req.ip || 'unknown',
         req.get('user-agent') || 'unknown',
-        `error:${response.data.error_id}`,
+        `error:${response.error_id}`,
         'detect',
         'success',
         undefined,
         {
-          errorId: response.data.error_id,
+          errorId: response.error_id,
           service: req.body.service,
           endpoint: req.body.endpoint,
           statusCode: req.body.status_code,
-          category: response.data.category,
-          severity: response.data.severity,
+          category: response.category,
+          severity: response.severity,
         }
       )
 
-      res.json(response.data)
+      res.json(response)
     } catch (error: any) {
       logger.error('Error in error detection', {
         error: error.message,
@@ -361,14 +363,13 @@ export function createErrorResolutionRoutes(
         },
       }
 
-      const response = await axios.post(
-        `${internalApiUrl}/error-resolution/resolve`,
-        requestBody,
+      const response = await serviceDiscovery.callService(
+        'error-resolution',
+        '/resolve',
         {
-          headers: { 
-            'x-api-key': getApiKey(),
-            'Content-Type': 'application/json',
-          },
+          method: 'POST',
+          data: requestBody,
+          apiKey: getApiKey()
         }
       )
 
@@ -377,7 +378,7 @@ export function createErrorResolutionRoutes(
         email: req.user?.email,
         errorId: req.body.error_id,
         strategy: req.body.resolution_strategy,
-        attemptId: response.data.attempt_id,
+        attemptId: response.attempt_id,
       })
 
       auditService.logOperationEvent(
@@ -388,17 +389,17 @@ export function createErrorResolutionRoutes(
         req.get('user-agent') || 'unknown',
         `error:${req.body.error_id}`,
         'resolve',
-        response.data.success ? 'success' : 'failure',
+        response.success ? 'success' : 'failure',
         undefined,
         {
           errorId: req.body.error_id,
-          attemptId: response.data.attempt_id,
-          strategy: response.data.strategy,
-          success: response.data.success,
+          attemptId: response.attempt_id,
+          strategy: response.strategy,
+          success: response.success,
         }
       )
 
-      res.json(response.data)
+      res.json(response)
     } catch (error: any) {
       logger.error('Error in error resolution', {
         error: error.message,
@@ -432,14 +433,13 @@ export function createErrorResolutionRoutes(
    */
   router.post('/rollback', async (req: Request, res: Response) => {
     try {
-      const response = await axios.post(
-        `${internalApiUrl}/error-resolution/rollback`,
-        req.body,
+      const response = await serviceDiscovery.callService(
+        'error-resolution',
+        '/rollback',
         {
-          headers: { 
-            'x-api-key': getApiKey(),
-            'Content-Type': 'application/json',
-          },
+          method: 'POST',
+          data: req.body,
+          apiKey: getApiKey()
         }
       )
 
@@ -447,7 +447,7 @@ export function createErrorResolutionRoutes(
         userId: req.user?.userId,
         email: req.user?.email,
         attemptId: req.body.attempt_id,
-        success: response.data.rollback_success,
+        success: response.rollback_success,
       })
 
       auditService.logOperationEvent(
@@ -458,15 +458,15 @@ export function createErrorResolutionRoutes(
         req.get('user-agent') || 'unknown',
         `attempt:${req.body.attempt_id}`,
         'rollback',
-        response.data.rollback_success ? 'success' : 'failure',
+        response.rollback_success ? 'success' : 'failure',
         undefined,
         {
           attemptId: req.body.attempt_id,
-          success: response.data.rollback_success,
+          success: response.rollback_success,
         }
       )
 
-      res.json(response.data)
+      res.json(response)
     } catch (error: any) {
       logger.error('Error in error resolution rollback', {
         error: error.message,
@@ -500,14 +500,15 @@ export function createErrorResolutionRoutes(
    */
   router.get('/attempts/:attemptId', async (req: Request, res: Response) => {
     try {
-      const response = await axios.get(
-        `${internalApiUrl}/error-resolution/attempts/${req.params.attemptId}`,
+      const response = await serviceDiscovery.callService(
+        'error-resolution',
+        `/attempts/${req.params.attemptId}`,
         {
-          headers: { 'x-api-key': getApiKey() },
+          apiKey: getApiKey()
         }
       )
 
-      res.json(response.data)
+      res.json(response)
     } catch (error: any) {
       logger.error('Error fetching resolution attempt', {
         error: error.message,
@@ -527,14 +528,15 @@ export function createErrorResolutionRoutes(
    */
   router.get('/health', async (req: Request, res: Response) => {
     try {
-      const response = await axios.get(
-        `${internalApiUrl}/error-resolution/health`,
+      const response = await serviceDiscovery.callService(
+        'error-resolution',
+        '/health',
         {
-          headers: { 'x-api-key': getApiKey() },
+          apiKey: getApiKey()
         }
       )
 
-      res.json(response.data)
+      res.json(response)
     } catch (error: any) {
       logger.error('Error fetching error resolution health', {
         error: error.message,

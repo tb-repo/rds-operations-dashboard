@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logout URL Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-result { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .pass { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .fail { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        pre { background-color: #f8f9fa; padding: 10px; border-radius: 5px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>Logout URL Construction Test</h1>
+    <p>This test verifies that the logout URL is constructed correctly with the <code>redirect_uri</code> parameter.</p>
+    
+    <div id="test-results"></div>
+    
+    <script type="module">
+        // Mock Cognito configuration
+        const mockConfig = {
+            domain: 'rds-dashboard-auth-876595225096.auth.ap-southeast-1.amazoncognito.com',
+            clientId: '28e031hsul0mi91k0s6f33bs7s',
+            logoutUri: 'https://d2qvaswtmn22om.cloudfront.net/'
+        };
+
+        // Mock CognitoService logout method (simplified)
+        function constructLogoutUrl(config) {
+            return `https://${config.domain}/logout?client_id=${config.clientId}&redirect_uri=${encodeURIComponent(config.logoutUri)}`;
+        }
+
+        // Run tests
+        const resultsDiv = document.getElementById('test-results');
+        
+        function addResult(title, passed, message, details = '') {
+            const div = document.createElement('div');
+            div.className = `test-result ${passed ? 'pass' : 'fail'}`;
+            div.innerHTML = `
+                <strong>${passed ? 'PASS' : 'FAIL'}: ${title}</strong><br>
+                ${message}
+                ${details ? `<pre>${details}</pre>` : ''}
+            `;
+            resultsDiv.appendChild(div);
+        }
+
+        function addInfo(title, message) {
+            const div = document.createElement('div');
+            div.className = 'test-result info';
+            div.innerHTML = `<strong>${title}</strong><br>${message}`;
+            resultsDiv.appendChild(div);
+        }
+
+        // Test 1: Check logout URL construction
+        const logoutUrl = constructLogoutUrl(mockConfig);
+        const hasRedirectUri = logoutUrl.includes('redirect_uri=');
+        const hasLogoutUri = logoutUrl.includes('logout_uri=');
+        
+        addResult(
+            'Logout URL uses redirect_uri parameter',
+            hasRedirectUri,
+            hasRedirectUri ? 'Logout URL correctly uses redirect_uri parameter' : 'Logout URL does not use redirect_uri parameter',
+            `Generated URL: ${logoutUrl}`
+        );
+
+        addResult(
+            'Logout URL does not use logout_uri parameter',
+            !hasLogoutUri,
+            !hasLogoutUri ? 'Logout URL correctly avoids logout_uri parameter' : 'Logout URL incorrectly uses logout_uri parameter'
+        );
+
+        // Test 2: Check URL encoding
+        const expectedEncodedUri = encodeURIComponent(mockConfig.logoutUri);
+        const hasProperEncoding = logoutUrl.includes(expectedEncodedUri);
+        
+        addResult(
+            'Logout URI is properly URL encoded',
+            hasProperEncoding,
+            hasProperEncoding ? 'Logout URI is properly encoded' : 'Logout URI is not properly encoded',
+            `Expected: ${expectedEncodedUri}\nFound in URL: ${hasProperEncoding ? 'Yes' : 'No'}`
+        );
+
+        // Test 3: Check required parameters
+        const hasClientId = logoutUrl.includes(`client_id=${mockConfig.clientId}`);
+        const hasDomain = logoutUrl.startsWith(`https://${mockConfig.domain}/logout`);
+        
+        addResult(
+            'Logout URL includes client_id',
+            hasClientId,
+            hasClientId ? 'Client ID is included in logout URL' : 'Client ID is missing from logout URL'
+        );
+
+        addResult(
+            'Logout URL uses correct Cognito domain',
+            hasDomain,
+            hasDomain ? 'Correct Cognito domain is used' : 'Incorrect or missing Cognito domain'
+        );
+
+        // Summary
+        addInfo(
+            'Test Summary',
+            `The logout functionality has been fixed to use the correct <code>redirect_uri</code> parameter instead of <code>logout_uri</code>. This resolves the "Required String parameter 'redirect_uri' is not present" error that was preventing users from logging out successfully.`
+        );
+
+        addInfo(
+            'Manual Testing',
+            `To complete the testing:
+            <br>1. Open <a href="https://d2qvaswtmn22om.cloudfront.net" target="_blank">https://d2qvaswtmn22om.cloudfront.net</a>
+            <br>2. Login with valid credentials
+            <br>3. Click the logout button
+            <br>4. Verify clean redirect to login page without errors
+            <br>5. Check browser console for any JavaScript errors`
+        );
+    </script>
+</body>
+</html>

@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Frontend Operations</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .loading { background-color: #fff3cd; border-color: #ffeaa7; }
+        button { padding: 10px 20px; margin: 5px; background-color: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #6c757d; cursor: not-allowed; }
+        pre { background-color: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
+        .status { font-weight: bold; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>RDS Dashboard Operations Test</h1>
+    <p>This page tests the operations and discovery functionality without authentication.</p>
+
+    <div id="discovery-section" class="test-section">
+        <h2>Discovery Test</h2>
+        <button onclick="testDiscovery()" id="discovery-btn">Test Discovery</button>
+        <div id="discovery-status" class="status"></div>
+        <pre id="discovery-result"></pre>
+    </div>
+
+    <div id="operations-section" class="test-section">
+        <h2>Operations Test</h2>
+        <button onclick="testOperation()" id="operations-btn">Test Create Snapshot</button>
+        <div id="operations-status" class="status"></div>
+        <pre id="operations-result"></pre>
+    </div>
+
+    <div id="instances-section" class="test-section">
+        <h2>Instances List Test</h2>
+        <button onclick="testInstances()" id="instances-btn">Get Instances</button>
+        <div id="instances-status" class="status"></div>
+        <pre id="instances-result"></pre>
+    </div>
+
+    <script>
+        // Configuration
+        const BFF_URL = 'https://d2qvaswtmn22om.cloudfront.net'; // CloudFront URL
+        const API_KEY = 'rds-dashboard-internal-api-key-2024';
+
+        // Helper function to make API calls
+        async function makeApiCall(endpoint, method = 'GET', body = null) {
+            const headers = {
+                'Content-Type': 'application/json',
+                'x-api-key': API_KEY,
+                'Origin': window.location.origin,
+                'Access-Control-Request-Method': method,
+                'Access-Control-Request-Headers': 'Content-Type,x-api-key'
+            };
+
+            const config = {
+                method: method,
+                headers: headers,
+                mode: 'cors',
+                credentials: 'include'
+            };
+
+            if (body) {
+                config.body = JSON.stringify(body);
+            }
+
+            try {
+                const response = await fetch(`${BFF_URL}${endpoint}`, config);
+                const data = await response.text();
+                
+                let parsedData;
+                try {
+                    parsedData = JSON.parse(data);
+                } catch (e) {
+                    parsedData = { raw_response: data };
+                }
+
+                return {
+                    status: response.status,
+                    statusText: response.statusText,
+                    data: parsedData,
+                    headers: Object.fromEntries(response.headers.entries())
+                };
+            } catch (error) {
+                return {
+                    status: 0,
+                    statusText: 'Network Error',
+                    data: { error: error.message },
+                    headers: {}
+                };
+            }
+        }
+
+        // Test Discovery
+        async function testDiscovery() {
+            const btn = document.getElementById('discovery-btn');
+            const status = document.getElementById('discovery-status');
+            const result = document.getElementById('discovery-result');
+            const section = document.getElementById('discovery-section');
+
+            btn.disabled = true;
+            section.className = 'test-section loading';
+            status.textContent = 'Testing discovery...';
+            result.textContent = '';
+
+            try {
+                const response = await makeApiCall('/api/discovery/trigger', 'POST', {
+                    trigger: 'manual',
+                    timestamp: new Date().toISOString()
+                });
+
+                if (response.status === 200 || response.status === 202) {
+                    section.className = 'test-section success';
+                    status.textContent = `✅ Discovery test successful (${response.status})`;
+                } else {
+                    section.className = 'test-section error';
+                    status.textContent = `❌ Discovery test failed (${response.status})`;
+                }
+
+                result.textContent = JSON.stringify(response, null, 2);
+            } catch (error) {
+                section.className = 'test-section error';
+                status.textContent = '❌ Discovery test error';
+                result.textContent = error.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // Test Operations
+        async function testOperation() {
+            const btn = document.getElementById('operations-btn');
+            const status = document.getElementById('operations-status');
+            const result = document.getElementById('operations-result');
+            const section = document.getElementById('operations-section');
+
+            btn.disabled = true;
+            section.className = 'test-section loading';
+            status.textContent = 'Testing operation...';
+            result.textContent = '';
+
+            try {
+                const response = await makeApiCall('/api/operations', 'POST', {
+                    instance_id: 'tb-pg-db1',
+                    operation: 'create_snapshot',
+                    region: 'ap-southeast-1',
+                    account_id: '876595225096',
+                    parameters: {
+                        snapshot_id: `test-snapshot-${Date.now()}`
+                    },
+                    user_id: 'test-user',
+                    requested_by: 'test@example.com',
+                    user_groups: ['Admin'],
+                    timestamp: new Date().toISOString()
+                });
+
+                if (response.status === 200) {
+                    section.className = 'test-section success';
+                    status.textContent = '✅ Operation test successful';
+                } else {
+                    section.className = 'test-section error';
+                    status.textContent = `❌ Operation test failed (${response.status})`;
+                }
+
+                result.textContent = JSON.stringify(response, null, 2);
+            } catch (error) {
+                section.className = 'test-section error';
+                status.textContent = '❌ Operation test error';
+                result.textContent = error.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // Test Instances
+        async function testInstances() {
+            const btn = document.getElementById('instances-btn');
+            const status = document.getElementById('instances-status');
+            const result = document.getElementById('instances-result');
+            const section = document.getElementById('instances-section');
+
+            btn.disabled = true;
+            section.className = 'test-section loading';
+            status.textContent = 'Getting instances...';
+            result.textContent = '';
+
+            try {
+                const response = await makeApiCall('/api/instances', 'GET');
+
+                if (response.status === 200) {
+                    section.className = 'test-section success';
+                    status.textContent = '✅ Instances test successful';
+                } else {
+                    section.className = 'test-section error';
+                    status.textContent = `❌ Instances test failed (${response.status})`;
+                }
+
+                result.textContent = JSON.stringify(response, null, 2);
+            } catch (error) {
+                section.className = 'test-section error';
+                status.textContent = '❌ Instances test error';
+                result.textContent = error.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // Auto-run tests on page load
+        window.onload = function() {
+            console.log('Testing RDS Dashboard Operations...');
+            
+            // Test instances first (simplest test)
+            setTimeout(testInstances, 1000);
+            
+            // Test discovery after instances
+            setTimeout(testDiscovery, 3000);
+            
+            // Test operations last (most complex)
+            setTimeout(testOperation, 5000);
+        };
+    </script>
+</body>
+</html>

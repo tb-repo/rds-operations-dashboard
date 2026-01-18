@@ -164,7 +164,9 @@ export interface ComplianceCheck {
 
 export interface OperationRequest {
   instance_id: string
-  operation_type: 'create_snapshot' | 'reboot' | 'modify_backup_window' | 'stop_instance' | 'start_instance' | 'enable_storage_autoscaling' | 'modify_storage'
+  operation: 'create_snapshot' | 'reboot' | 'modify_backup_window' | 'stop_instance' | 'start_instance' | 'enable_storage_autoscaling' | 'modify_storage'
+  region?: string
+  account_id?: string
   parameters?: Record<string, any>
 }
 
@@ -262,8 +264,27 @@ export const api = {
 
   // Operations
   executeOperation: async (request: OperationRequest) => {
-    const response = await apiClient.post<OperationResult>('/api/operations', request)
-    return response.data
+    // Ensure we have the correct field names and required data
+    const operationRequest = {
+      instance_id: request.instance_id,
+      operation: request.operation, // Use 'operation' not 'operation_type'
+      region: request.region || 'ap-southeast-1', // Default region if not provided
+      account_id: request.account_id || '876595225096', // Default account if not provided
+      parameters: request.parameters || {},
+      // Add timestamp for debugging
+      timestamp: new Date().toISOString()
+    }
+    
+    console.log('Executing operation with payload:', operationRequest)
+    
+    try {
+      const response = await apiClient.post<OperationResult>('/api/operations', operationRequest)
+      console.log('Operation response:', response.data)
+      return response.data
+    } catch (error) {
+      console.error('Operation failed:', error)
+      throw error
+    }
   },
 
   // CloudOps Requests

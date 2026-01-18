@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Logout Fix - Final Verification</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+        }
+        .success { background-color: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .info { background-color: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; }
+        .warning { background-color: #fff3cd; border: 1px solid #ffeaa7; color: #856404; }
+        .error { background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        .logout-btn { background-color: #dc3545; }
+        .logout-btn:hover { background-color: #c82333; }
+        #results { margin-top: 20px; }
+        .test-step {
+            background: #f8f9fa;
+            padding: 15px;
+            margin: 10px 0;
+            border-left: 4px solid #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Logout Fix - Final Verification Test</h1>
+        
+        <div class="status success">
+            <strong>✅ DEPLOYMENT COMPLETE:</strong> Logout fix has been deployed to production!
+        </div>
+
+        <div class="status info">
+            <strong>🎯 TESTING OBJECTIVE:</strong> Verify that logout works without "response_type" error
+        </div>
+
+        <h2>🧪 Test Steps</h2>
+        
+        <div class="test-step">
+            <h3>Step 1: Access Production Dashboard</h3>
+            <p>Click the button below to open the production dashboard:</p>
+            <button onclick="openDashboard()">🚀 Open Production Dashboard</button>
+            <p><small>URL: https://d2qvaswtmn22om.cloudfront.net</small></p>
+        </div>
+
+        <div class="test-step">
+            <h3>Step 2: Login to Dashboard</h3>
+            <p>Use your credentials to login to the dashboard. The login process should work normally.</p>
+        </div>
+
+        <div class="test-step">
+            <h3>Step 3: Test Logout Functionality</h3>
+            <p>Once logged in, click the logout button in the dashboard. This should:</p>
+            <ul>
+                <li>✅ <strong>NOT show "Required String parameter 'response_type' is not present" error</strong></li>
+                <li>✅ Successfully redirect to Cognito logout page</li>
+                <li>✅ Clear your session</li>
+                <li>✅ Redirect back to login page</li>
+            </ul>
+        </div>
+
+        <div class="test-step">
+            <h3>Step 4: Verify Fix Applied</h3>
+            <p>The logout URL should now use the <code>logout_uri</code> parameter instead of <code>redirect_uri</code>:</p>
+            <div style="background: #f1f1f1; padding: 10px; border-radius: 3px; font-family: monospace; font-size: 12px;">
+                ✅ CORRECT: https://rds-dashboard-auth.auth.ap-southeast-1.amazoncognito.com/logout?client_id=...&logout_uri=...
+                <br>
+                ❌ OLD (BROKEN): https://rds-dashboard-auth.auth.ap-southeast-1.amazoncognito.com/logout?client_id=...&redirect_uri=...
+            </div>
+        </div>
+
+        <h2>📊 Test Results</h2>
+        <div id="results">
+            <div class="status warning">
+                <strong>⏳ AWAITING TEST RESULTS:</strong> Please complete the test steps above and report results.
+            </div>
+        </div>
+
+        <h2>🔧 Technical Details</h2>
+        
+        <h3>What Was Fixed:</h3>
+        <ul>
+            <li><strong>File:</strong> <code>frontend/src/lib/auth/cognito.ts</code></li>
+            <li><strong>Function:</strong> <code>logout()</code> method</li>
+            <li><strong>Change:</strong> Using <code>logout_uri</code> parameter instead of <code>redirect_uri</code></li>
+            <li><strong>Reason:</strong> Cognito logout endpoint with <code>redirect_uri</code> requires additional OAuth2 parameters</li>
+        </ul>
+
+        <h3>Deployment Status:</h3>
+        <ul>
+            <li>✅ Frontend built successfully</li>
+            <li>✅ Deployed to S3: <code>rds-dashboard-frontend-876595225096</code></li>
+            <li>✅ CloudFront cache invalidated: <code>I6NGWETPSRTA47VJIRDJ01F4A</code></li>
+            <li>✅ Changes are now live in production</li>
+        </ul>
+
+        <h2>🎉 Expected Outcome</h2>
+        <div class="status success">
+            <strong>SUCCESS CRITERIA:</strong>
+            <br>• Users can logout successfully without any errors
+            <br>• No "response_type" error message appears
+            <br>• Clean redirect to logout page and back to login
+            <br>• Session is properly cleared
+        </div>
+
+        <h2>🚨 If Issues Persist</h2>
+        <div class="status error">
+            <strong>TROUBLESHOOTING:</strong>
+            <br>• Clear browser cache and cookies
+            <br>• Try in incognito/private browsing mode
+            <br>• Check browser console for JavaScript errors
+            <br>• Verify CloudFront cache has been cleared (may take 5-15 minutes)
+        </div>
+
+        <div style="margin-top: 30px; text-align: center; color: #666;">
+            <p><strong>Test completed on:</strong> <span id="timestamp"></span></p>
+            <p><strong>CloudFront Distribution:</strong> E25MCU6AMR4FOK</p>
+            <p><strong>Invalidation ID:</strong> I6NGWETPSRTA47VJIRDJ01F4A</p>
+        </div>
+    </div>
+
+    <script>
+        // Set current timestamp
+        document.getElementById('timestamp').textContent = new Date().toLocaleString();
+
+        function openDashboard() {
+            window.open('https://d2qvaswtmn22om.cloudfront.net', '_blank');
+        }
+
+        // Auto-refresh timestamp every minute
+        setInterval(() => {
+            document.getElementById('timestamp').textContent = new Date().toLocaleString();
+        }, 60000);
+    </script>
+</body>
+</html>

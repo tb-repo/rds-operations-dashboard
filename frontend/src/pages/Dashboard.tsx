@@ -12,6 +12,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 
 export default function Dashboard() {
   const { user } = useAuth()
+  // Discovery and refresh with better error handling
   const { 
     data: instances, 
     isLoading: instancesLoading, 
@@ -20,6 +21,11 @@ export default function Dashboard() {
   } = useQuery({
     queryKey: ['instances'],
     queryFn: () => api.getInstances(),
+    retry: 3, // Retry failed requests up to 3 times
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
+    staleTime: 30000, // Consider data stale after 30 seconds
+    refetchInterval: 60000, // Auto-refresh every 60 seconds
+    refetchIntervalInBackground: false, // Don't refresh when tab is not active
   })
 
   const { 
@@ -29,6 +35,9 @@ export default function Dashboard() {
   } = useQuery({
     queryKey: ['alerts'],
     queryFn: () => api.getAlerts(),
+    retry: 2,
+    retryDelay: 1000,
+    staleTime: 60000, // Alerts can be stale for longer
   })
 
   const { 
@@ -38,6 +47,9 @@ export default function Dashboard() {
   } = useQuery({
     queryKey: ['costs'],
     queryFn: () => api.getCosts(),
+    retry: 2,
+    retryDelay: 1000,
+    staleTime: 300000, // Cost data can be stale for 5 minutes
   })
 
   const { 
@@ -47,26 +59,81 @@ export default function Dashboard() {
   } = useQuery({
     queryKey: ['compliance'],
     queryFn: () => api.getCompliance(),
+    retry: 2,
+    retryDelay: 1000,
+    staleTime: 300000, // Compliance data can be stale for 5 minutes
   })
 
-  const handleRefreshAll = () => {
-    refetchInstances()
-    refetchAlerts()
-    refetchCosts()
-    refetchCompliance()
+  const handleRefreshAll = async () => {
+    try {
+      console.log('Refreshing all dashboard data...')
+      
+      // Show loading state
+      const refreshPromises = [
+        refetchInstances(),
+        refetchAlerts(),
+        refetchCosts(),
+        refetchCompliance()
+      ]
+      
+      await Promise.all(refreshPromises)
+      
+      console.log('Dashboard data refreshed successfully')
+      
+      // Optional: Show success message briefly
+      // You could add a toast notification here
+      
+    } catch (error) {
+      console.error('Failed to refresh dashboard data:', error)
+      alert(`Failed to refresh dashboard data. 
+      
+Error: ${error instanceof Error ? error.message : 'Unknown error'}
+
+Please try again or contact support if the issue persists.`)
+    }
   }
 
   if (instancesLoading || alertsLoading || costsLoading || complianceLoading) {
-    return <LoadingSpinner size="lg" />
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
+        <LoadingSpinner size="lg" />
+        <div className="text-center">
+          <p className="text-gray-600">Loading dashboard data...</p>
+          <p className="text-sm text-gray-500 mt-1">
+            Fetching instances, alerts, costs, and compliance data
+          </p>
+        </div>
+      </div>
+    )
   }
 
   if (instancesError) {
     return (
-      <ErrorMessage 
-        message="Failed to load dashboard data" 
-        error={instancesError}
-        onRetry={handleRefreshAll}
-      />
+      <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
+        <AlertTriangle className="w-12 h-12 text-red-500" />
+        <div className="text-center">
+          <h2 className="text-lg font-semibold text-gray-900 mb-2">
+            Failed to Load Dashboard Data
+          </h2>
+          <p className="text-gray-600 mb-4">
+            Unable to fetch instance data from the backend API.
+          </p>
+          <ErrorMessage 
+            message="Dashboard data unavailable" 
+            error={instancesError}
+            onRetry={handleRefreshAll}
+          />
+          <div className="mt-4 text-sm text-gray-500">
+            <p>Possible causes:</p>
+            <ul className="list-disc list-inside mt-1 space-y-1">
+              <li>Backend API is unavailable</li>
+              <li>Authentication token has expired</li>
+              <li>Network connectivity issues</li>
+              <li>Discovery system needs configuration</li>
+            </ul>
+          </div>
+        </div>
+      </div>
     )
   }
 
@@ -105,14 +172,32 @@ export default function Dashboard() {
       console.log('Triggering discovery...')
       const result = await api.triggerDiscovery()
       console.log('Discovery triggered successfully:', result)
-      alert('Discovery triggered successfully! Instances will be refreshed shortly.')
-      // Refresh instances after a short delay to allow discovery to complete
+      
+      // Show more informative message
+      alert(`Discovery triggered successfully! 
+      
+Current status: ${totalInstances} instance(s) found
+Expected: 3 instances across multiple regions
+
+The system will scan all configured accounts and regions. 
+Please wait 30-60 seconds and click Refresh to see updated results.`)
+      
+      // Refresh instances after a longer delay to allow discovery to complete
       setTimeout(() => {
         refetchInstances()
-      }, 5000)
+      }, 10000) // Increased to 10 seconds
     } catch (error) {
       console.error('Failed to trigger discovery:', error)
-      alert('Failed to trigger discovery. Please check your permissions and try again.')
+      alert(`Failed to trigger discovery. 
+      
+Error: ${error instanceof Error ? error.message : 'Unknown error'}
+
+Please check:
+1. Your permissions include 'trigger_discovery'
+2. The discovery system is properly configured
+3. Cross-account roles are set up correctly
+
+Contact your administrator if the issue persists.`)
     }
   }
 
@@ -129,14 +214,26 @@ export default function Dashboard() {
         </div>
         
         <div className="flex items-center gap-3">
-          {/* Refresh Button */}
+          {/* Refresh Button with loading state */}
           <button
             onClick={handleRefreshAll}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-            title="Refresh dashboard data"
+            disabled={instancesLoading || alertsLoading || costsLoading || complianceLoading}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+              instancesLoading || alertsLoading || costsLoading || complianceLoading
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+            title="Refresh all dashboard data"
           >
-            <RefreshCw className="w-4 h-4" />
-            Refresh
+            <RefreshCw className={`w-4 h-4 ${
+              instancesLoading || alertsLoading || costsLoading || complianceLoading 
+                ? 'animate-spin' 
+                : ''
+            }`} />
+            {instancesLoading || alertsLoading || costsLoading || complianceLoading 
+              ? 'Refreshing...' 
+              : 'Refresh'
+            }
           </button>
           
           {/* Trigger Discovery Button - Only for users with trigger_discovery permission */}
@@ -151,6 +248,34 @@ export default function Dashboard() {
           </PermissionGuard>
         </div>
       </div>
+
+      {/* Instance Discovery Status Warning */}
+      {totalInstances < 3 && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="flex items-start">
+            <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5 mr-3 flex-shrink-0" />
+            <div className="flex-1">
+              <h3 className="text-sm font-medium text-yellow-800">
+                Incomplete Instance Discovery
+              </h3>
+              <p className="mt-1 text-sm text-yellow-700">
+                Currently showing {totalInstances} instance(s), but 3 instances are expected across multiple regions.
+                The discovery system may need to be configured for cross-account access or additional regions.
+              </p>
+              <div className="mt-3">
+                <PermissionGuard permission="trigger_discovery">
+                  <button
+                    onClick={handleTriggerDiscovery}
+                    className="text-sm bg-yellow-100 text-yellow-800 px-3 py-1 rounded hover:bg-yellow-200 transition-colors"
+                  >
+                    Trigger Full Discovery
+                  </button>
+                </PermissionGuard>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

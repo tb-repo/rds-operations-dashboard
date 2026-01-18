@@ -83,6 +83,33 @@ export class BffStack extends cdk.Stack {
     // Grant permission to read the API secret
     this.apiSecret.grantRead(bffRole);
 
+    // Grant permission to invoke discovery service
+    bffRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'lambda:InvokeFunction',
+      ],
+      resources: [
+        `arn:aws:lambda:${this.region}:${this.account}:function:rds-discovery-service*`,
+      ],
+    }));
+
+    // Grant permission to access cache table
+    bffRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'dynamodb:GetItem',
+        'dynamodb:PutItem',
+        'dynamodb:UpdateItem',
+        'dynamodb:DeleteItem',
+        'dynamodb:Query',
+        'dynamodb:Scan',
+      ],
+      resources: [
+        `arn:aws:dynamodb:${this.region}:${this.account}:table/rds-discovery-cache`,
+      ],
+    }));
+
     // Grant permission to read Cognito User Pool (for JWT validation)
     if (props.userPoolId) {
       bffRole.addToPolicy(new iam.PolicyStatement({
@@ -130,6 +157,10 @@ export class BffStack extends cdk.Stack {
         INTERNAL_API_URL: props.internalApiUrl,
         INTERNAL_API_KEY: '', // Will be populated from Secrets Manager at runtime
         API_SECRET_ARN: this.apiSecret.secretArn,
+        
+        // Discovery Service Configuration
+        DISCOVERY_FUNCTION_NAME: 'rds-discovery-service',
+        CACHE_TABLE_NAME: 'rds-discovery-cache',
         
         // Frontend Configuration
         FRONTEND_URL: props.frontendUrl || '*',

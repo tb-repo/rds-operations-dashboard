@@ -1,305 +1,405 @@
-# BFF (Backend-for-Frontend) Deployment Guide
+# BFF Deployment Guide
 
 ## Overview
 
-The BFF layer provides a secure proxy between the frontend and the internal API Gateway, eliminating the need to expose API keys in the browser. This solution uses AWS Secrets Manager to securely store API credentials.
-
-## Architecture
-
-```
-Frontend (Browser)
-    ↓ (No API Key)
-BFF API Gateway (Public)
-    ↓
-BFF Lambda Function
-    ↓ (Fetches API Key from Secrets Manager)
-Internal API Gateway (Protected)
-    ↓
-Backend Lambda Functions
-```
-
-## Security Benefits
-
-✅ **No API key in frontend code** - Completely eliminated from browser  
-✅ **Secrets in AWS Secrets Manager** - Encrypted and rotatable  
-✅ **Cached credentials** - BFF caches secrets for 5 minutes to reduce API calls  
-✅ **CORS enabled** - Proper cross-origin support  
-✅ **Error handling** - Graceful fallbacks  
+This guide covers the complete process for building and deploying the Backend-for-Frontend (BFF) service to AWS Lambda.
 
 ## Prerequisites
 
+- Node.js 18+ installed
 - AWS CLI configured with appropriate credentials
-- CDK deployed (API stack must be deployed first)
-- PowerShell (for Windows) or Bash (for Linux/Mac)
+- PowerShell 7+ (for deployment scripts)
+- Access to the target AWS account
 
-## Deployment Steps
+## Quick Start
 
-### Step 1: Deploy the BFF Stack
+### 1. Build and Deploy
 
 ```powershell
 # Navigate to project root
 cd rds-operations-dashboard
 
-# Deploy BFF stack
-./scripts/deploy-bff.ps1
+# Deploy BFF to production
+./scripts/deploy-bff-production.ps1
 ```
 
-This script will:
-1. Deploy the BFF CloudFormation stack
-2. Create Secrets Manager secret
-3. Populate the secret with API credentials
-4. Display the BFF API URL
-
-### Step 2: Update Frontend Configuration
-
-After deployment, update your frontend `.env` file:
-
-```bash
-# Get BFF URL
-aws cloudformation describe-stacks \
-  --stack-name RDSDashboard-BFF-prod \
-  --query 'Stacks[0].Outputs[?OutputKey==`BffApiUrl`].OutputValue' \
-  --output text
-```
-
-Update `frontend/.env`:
-```env
-VITE_BFF_API_URL=https://your-bff-url.execute-api.ap-southeast-1.amazonaws.com/prod
-```
-
-### Step 3: Test Locally
-
-```bash
-cd frontend
-npm run dev
-```
-
-Open http://localhost:5173 and verify:
-- Dashboard loads without errors
-- API calls work (check browser console)
-- No API key visible in network requests
-
-### Step 4: Deploy to Production
-
-```bash
-git add .
-git commit -m "Add BFF security layer"
-git push
-```
-
-GitHub Actions will automatically:
-1. Detect BFF stack
-2. Use BFF URL for frontend build
-3. Deploy to S3
-
-## Manual Deployment Steps
-
-If you prefer manual deployment:
-
-### 1. Deploy BFF Stack
-
-```bash
-cd rds-operations-dashboard/infrastructure
-npx aws-cdk deploy RDSDashboard-BFF-prod --require-approval never
-```
-
-### 2. Setup Secrets Manager
+### 2. Validate Deployment
 
 ```powershell
-./scripts/setup-bff-secrets.ps1
+# Run validation tests
+./scripts/validate-bff-deployment.ps1
 ```
 
-Or manually:
+## Detailed Deployment Process
 
-```bash
-# Get API Key ID
-API_KEY_ID=$(aws cloudformation describe-stacks \
-  --stack-name RDSDashboard-API-prod \
-  --query 'Stacks[0].Outputs[?OutputKey==`ApiKeyId`].OutputValue' \
-  --output text)
+### Step 1: Verify Build Environment
 
-# Get API URL
-API_URL=$(aws cloudformation describe-stacks \
-  --stack-name RDSDashboard-API-prod \
-  --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' \
-  --output text)
+```powershell
+# Check Node.js version
+node --version  # Should be 18+
 
-# Get API Key value
-API_KEY=$(aws apigateway get-api-key \
-  --api-key $API_KEY_ID \
-  --include-value \
-  --query 'value' \
-  --output text)
+# Check npm version
+npm --version
 
-# Update secret
-aws secretsmanager update-secret \
-  --secret-id rds-dashboard-api-key-prod \
-  --secret-string "{\"apiUrl\":\"$API_URL\",\"apiKey\":\"$API_KEY\",\"description\":\"RDS Dashboard API credentials\"}"
+# Navigate to BFF directory
+cd bff
+
+# Install dependencies
+npm install
 ```
 
-## Verification
+### Step 2: Build TypeScript
 
-### 1. Check BFF Stack Status
+```powershell
+# Build the project
+npm run build
 
-```bash
-aws cloudformation describe-stacks \
-  --stack-name RDSDashboard-BFF-prod \
-  --query 'Stacks[0].StackStatus' \
-  --output text
+# Verify dist directory was created
+ls dist/
 ```
 
-Expected: `CREATE_COMPLETE` or `UPDATE_COMPLETE`
-
-### 2. Verify Secrets Manager
-
-```bash
-aws secretsmanager describe-secret \
-  --secret-id rds-dashboard-api-key-prod
+Expected output:
+```
+dist/
+├── config/
+├── middleware/
+├── routes/
+├── services/
+├── utils/
+├── index.js
+├── index.d.ts
+├── lambda.js
+└── lambda.d.ts
 ```
 
-### 3. Test BFF Endpoint
+### Step 3: Deploy to Lambda
 
-```bash
-# Get BFF URL
-BFF_URL=$(aws cloudformation describe-stacks \
-  --stack-name RDSDashboard-BFF-prod \
-  --query 'Stacks[0].Outputs[?OutputKey==`BffApiUrl`].OutputValue' \
-  --output text)
+```powershell
+# From project root
+./scripts/deploy-bff-production.ps1
 
+# Or with custom parameters
+./scripts/deploy-bff-production.ps1 -FunctionName my-bff -Region us-east-1
+
+# Skip build if already built
+./scripts/deploy-bff-production.ps1 -SkipBuild
+```
+
+The deployment script will:
+1. Build TypeScript (unless -SkipBuild is used)
+2. Clean previous deployment artifacts
+3. Create deployment package directory
+4. Copy compiled code and package files
+5. Install production dependencies
+6. Create deployment zip
+7. Deploy to Lambda
+8. Test health endpoint
+
+### Step 4: Validate Deployment
+
+```powershell
+# Run validation tests
+./scripts/validate-bff-deployment.ps1
+```
+
+The validation script checks:
+- Lambda function exists
+- Health endpoint responds
+- CORS headers are configured
+- Environment variables are set
+- CloudWatch logs are accessible
+
+## Environment Variables
+
+The BFF requires these environment variables to be set in Lambda:
+
+### Required Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `COGNITO_USER_POOL_ID` | Cognito User Pool ID | `ap-southeast-1_abc123` |
+| `COGNITO_CLIENT_ID` | Cognito App Client ID | `1234567890abcdef` |
+| `COGNITO_REGION` | AWS region for Cognito | `ap-southeast-1` |
+| `INTERNAL_API_URL` | Backend API Gateway URL | `https://api.execute-api.region.amazonaws.com/prod` |
+
+### Optional Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `NODE_ENV` | Environment mode | `production` |
+| `LOG_LEVEL` | Logging level | `info` |
+| `API_SECRET_ARN` | Secrets Manager ARN for API key | (uses INTERNAL_API_KEY if not set) |
+| `INTERNAL_API_KEY` | Direct API key (if not using Secrets Manager) | - |
+
+### Setting Environment Variables
+
+```powershell
+# Update Lambda environment variables
+aws lambda update-function-configuration `
+  --function-name rds-dashboard-bff-prod `
+  --environment Variables="{
+    COGNITO_USER_POOL_ID=ap-southeast-1_abc123,
+    COGNITO_CLIENT_ID=1234567890abcdef,
+    COGNITO_REGION=ap-southeast-1,
+    INTERNAL_API_URL=https://your-api.execute-api.ap-southeast-1.amazonaws.com/prod,
+    NODE_ENV=production
+  }" `
+  --region ap-southeast-1
+```
+
+## Testing
+
+### Test Health Endpoint
+
+```powershell
+# Via Lambda
+aws lambda invoke `
+  --function-name rds-dashboard-bff-prod `
+  --payload '{"httpMethod":"GET","path":"/health","headers":{}}' `
+  --region ap-southeast-1 `
+  response.json
+
+# View response
+cat response.json
+```
+
+Expected response:
+```json
+{
+  "statusCode": 200,
+  "body": "{\"status\":\"healthy\",\"service\":\"rds-dashboard-bff\",\"timestamp\":\"2025-01-14T10:30:00.000Z\"}"
+}
+```
+
+### Test CORS
+
+```powershell
+# Test OPTIONS request
+aws lambda invoke `
+  --function-name rds-dashboard-bff-prod `
+  --payload '{"httpMethod":"OPTIONS","path":"/api/instances","headers":{"Origin":"https://your-domain.cloudfront.net"}}' `
+  --region ap-southeast-1 `
+  response.json
+
+# View response
+cat response.json
+```
+
+Expected response should include CORS headers:
+```json
+{
+  "statusCode": 204,
+  "headers": {
+    "Access-Control-Allow-Origin": "https://your-domain.cloudfront.net",
+    "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type,Authorization"
+  }
+}
+```
+
+### Test via API Gateway
+
+```powershell
 # Test health endpoint
-curl "${BFF_URL}/health"
+curl https://your-api.execute-api.ap-southeast-1.amazonaws.com/prod/health
+
+# Test with authentication
+curl https://your-api.execute-api.ap-southeast-1.amazonaws.com/prod/api/instances \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
-### 4. Check Lambda Logs
+## Monitoring
 
-```bash
+### View CloudWatch Logs
+
+```powershell
+# Tail logs in real-time
 aws logs tail /aws/lambda/rds-dashboard-bff-prod --follow
+
+# View recent logs
+aws logs tail /aws/lambda/rds-dashboard-bff-prod --since 1h
+
+# Filter for errors
+aws logs tail /aws/lambda/rds-dashboard-bff-prod --filter-pattern "ERROR"
+```
+
+### Check Lambda Metrics
+
+```powershell
+# Get function configuration
+aws lambda get-function-configuration `
+  --function-name rds-dashboard-bff-prod `
+  --region ap-southeast-1
+
+# Get function metrics (via CloudWatch)
+aws cloudwatch get-metric-statistics `
+  --namespace AWS/Lambda `
+  --metric-name Invocations `
+  --dimensions Name=FunctionName,Value=rds-dashboard-bff-prod `
+  --start-time 2025-01-14T00:00:00Z `
+  --end-time 2025-01-14T23:59:59Z `
+  --period 3600 `
+  --statistics Sum `
+  --region ap-southeast-1
 ```
 
 ## Troubleshooting
 
-### Issue: BFF returns 500 error
+### Build Fails
 
-**Cause:** Secret not populated or Lambda can't access it
+**Issue**: TypeScript compilation errors
 
-**Solution:**
+**Solution**:
 ```powershell
-./scripts/setup-bff-secrets.ps1
+# Check for syntax errors
+npm run lint
+
+# Clean and rebuild
+rm -rf dist node_modules
+npm install
+npm run build
 ```
 
-### Issue: CORS errors in browser
+### Deployment Fails
 
-**Cause:** BFF API Gateway CORS not configured
+**Issue**: Lambda update fails
 
-**Solution:** Redeploy BFF stack:
-```bash
-npx aws-cdk deploy RDSDashboard-BFF-prod --force
+**Solution**:
+```powershell
+# Verify AWS credentials
+aws sts get-caller-identity
+
+# Check Lambda function exists
+aws lambda get-function --function-name rds-dashboard-bff-prod --region ap-southeast-1
+
+# Check IAM permissions (need lambda:UpdateFunctionCode)
 ```
 
-### Issue: Frontend still using direct API
+### Health Check Fails
 
-**Cause:** `VITE_BFF_API_URL` not set
+**Issue**: Health endpoint returns 500 error
 
-**Solution:** 
-1. Check `frontend/.env` has `VITE_BFF_API_URL` set
-2. Rebuild frontend: `npm run build`
-3. Clear browser cache
+**Solution**:
+```powershell
+# Check CloudWatch logs
+aws logs tail /aws/lambda/rds-dashboard-bff-prod --follow
 
-### Issue: Secret rotation needed
+# Verify environment variables
+aws lambda get-function-configuration --function-name rds-dashboard-bff-prod --region ap-southeast-1
 
-**Solution:**
-```bash
-# Rotate API key in API Gateway
-aws apigateway update-api-key \
-  --api-key <API_KEY_ID> \
-  --patch-operations op=replace,path=/value,value=<NEW_KEY>
-
-# Update secret
-./scripts/setup-bff-secrets.ps1
+# Test Lambda directly
+aws lambda invoke --function-name rds-dashboard-bff-prod --payload '{"httpMethod":"GET","path":"/health","headers":{}}' response.json
 ```
 
-## Cost Considerations
+### CORS Errors
 
-The BFF solution adds minimal cost:
+**Issue**: Frontend gets CORS errors
 
-- **Lambda invocations:** ~$0.20 per 1M requests
-- **API Gateway:** ~$3.50 per 1M requests
-- **Secrets Manager:** ~$0.40 per secret per month + $0.05 per 10,000 API calls
-- **CloudWatch Logs:** ~$0.50 per GB
+**Solution**:
+1. Verify CloudFront domain is in allowed origins
+2. Check API Gateway CORS configuration
+3. Test OPTIONS requests directly
+4. Review BFF CORS middleware configuration
 
-**Estimated monthly cost for 1M requests:** ~$5
+```powershell
+# Check CORS configuration in code
+cat bff/src/config/cors.ts
 
-## Security Best Practices
-
-1. **Rotate secrets regularly** - Use AWS Secrets Manager rotation
-2. **Monitor BFF logs** - Set up CloudWatch alarms for errors
-3. **Limit BFF access** - Consider adding WAF rules if needed
-4. **Use VPC endpoints** - For enhanced security (optional)
-5. **Enable API Gateway throttling** - Already configured (1000 req/s)
-
-## Rollback Plan
-
-If issues occur, rollback to direct API access:
-
-1. Update `frontend/.env`:
-   ```env
-   # Comment out BFF URL
-   # VITE_BFF_API_URL=https://...
-   
-   # Use direct API
-   VITE_API_BASE_URL=https://0pjyr8lkpl.execute-api.ap-southeast-1.amazonaws.com/prod
-   VITE_API_KEY=<your-api-key>
-   ```
-
-2. Rebuild and redeploy frontend
-
-3. Delete BFF stack (optional):
-   ```bash
-   aws cloudformation delete-stack --stack-name RDSDashboard-BFF-prod
-   ```
-
-## Monitoring
-
-### CloudWatch Metrics
-
-Monitor these metrics in CloudWatch:
-
-- **BFF Lambda Duration** - Should be < 1000ms
-- **BFF Lambda Errors** - Should be 0
-- **BFF API Gateway 4XX/5XX** - Should be minimal
-- **Secrets Manager API Calls** - Should be low (caching working)
-
-### Set Up Alarms
-
-```bash
-# Lambda error alarm
-aws cloudwatch put-metric-alarm \
-  --alarm-name rds-dashboard-bff-errors \
-  --alarm-description "BFF Lambda errors" \
-  --metric-name Errors \
-  --namespace AWS/Lambda \
-  --statistic Sum \
-  --period 300 \
-  --evaluation-periods 1 \
-  --threshold 5 \
-  --comparison-operator GreaterThanThreshold \
-  --dimensions Name=FunctionName,Value=rds-dashboard-bff-prod
+# Test OPTIONS request
+curl -X OPTIONS https://your-api.execute-api.ap-southeast-1.amazonaws.com/prod/api/instances \
+  -H "Origin: https://your-domain.cloudfront.net" \
+  -H "Access-Control-Request-Method: GET" \
+  -v
 ```
 
-## Next Steps
+### Large Package Size
 
-After successful BFF deployment:
+**Issue**: Deployment package exceeds Lambda limits
 
-1. ✅ Remove API key from frontend code completely
-2. ✅ Update documentation to reference BFF URL
-3. ✅ Set up monitoring and alarms
-4. ✅ Configure secret rotation (optional)
-5. ✅ Consider adding WAF for additional security (optional)
+**Solution**:
+```powershell
+# Check package size
+ls -lh bff/deployment.zip
+
+# Analyze dependencies
+cd bff
+npm ls --depth=0
+
+# Remove unnecessary dependencies
+npm prune --production
+
+# Consider using Lambda layers for large dependencies
+```
+
+## Rollback
+
+If deployment causes issues, rollback to previous version:
+
+```powershell
+# Option 1: Redeploy previous deployment.zip
+aws lambda update-function-code `
+  --function-name rds-dashboard-bff-prod `
+  --zip-file fileb://deployment.zip.backup `
+  --region ap-southeast-1
+
+# Option 2: Use Lambda version/alias
+aws lambda update-alias `
+  --function-name rds-dashboard-bff-prod `
+  --name prod `
+  --function-version PREVIOUS_VERSION `
+  --region ap-southeast-1
+```
+
+## Best Practices
+
+### Before Deployment
+
+1. **Test locally**: Run `npm test` to ensure all tests pass
+2. **Review changes**: Check git diff to understand what's being deployed
+3. **Backup current version**: Keep a copy of the current deployment.zip
+4. **Check environment**: Verify environment variables are correct
+
+### During Deployment
+
+1. **Monitor logs**: Keep CloudWatch logs open during deployment
+2. **Test incrementally**: Test each endpoint after deployment
+3. **Watch metrics**: Monitor Lambda invocation metrics
+4. **Be ready to rollback**: Have rollback command ready
+
+### After Deployment
+
+1. **Validate thoroughly**: Run full validation suite
+2. **Test user flows**: Test critical user journeys
+3. **Monitor for errors**: Watch CloudWatch logs for 15-30 minutes
+4. **Document changes**: Update deployment log with what was deployed
+
+## Deployment Checklist
+
+- [ ] Code changes reviewed and tested locally
+- [ ] All tests passing (`npm test`)
+- [ ] TypeScript builds without errors (`npm run build`)
+- [ ] Environment variables verified
+- [ ] Backup of current deployment created
+- [ ] Deployment script executed successfully
+- [ ] Validation tests passed
+- [ ] Health endpoint responding
+- [ ] CORS configuration working
+- [ ] CloudWatch logs showing no errors
+- [ ] Frontend integration tested
+- [ ] User flows validated
+- [ ] Deployment documented
 
 ## Support
 
 For issues or questions:
-1. Check CloudWatch logs: `/aws/lambda/rds-dashboard-bff-prod`
-2. Verify Secrets Manager secret is populated
-3. Test BFF endpoint directly with curl
-4. Review this guide's troubleshooting section
+1. Check CloudWatch logs first
+2. Review this guide's troubleshooting section
+3. Check the main README.md for project overview
+4. Review the BFF architecture documentation
+
+## Related Documentation
+
+- [BFF Architecture](./bff-architecture.md)
+- [BFF Testing Guide](./bff-testing-guide.md)
+- [API Documentation](./api-documentation.md)
+- [Deployment Guide](./deployment.md)

@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RDS Operations Dashboard - Live Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        .content {
+            padding: 30px;
+        }
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .status-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            border-left: 4px solid #28a745;
+        }
+        .status-card.warning {
+            border-left-color: #ffc107;
+        }
+        .status-card.error {
+            border-left-color: #dc3545;
+        }
+        .status-card h3 {
+            margin: 0 0 10px 0;
+            color: #2c3e50;
+        }
+        .instances-section {
+            margin-top: 30px;
+        }
+        .account-group {
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        .account-header {
+            background: #e9ecef;
+            padding: 15px 20px;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .account-header h3 {
+            margin: 0;
+            color: #495057;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .instance-list {
+            padding: 0;
+        }
+        .instance-item {
+            display: grid;
+            grid-template-columns: 1fr 120px 100px 120px 80px;
+            gap: 15px;
+            padding: 15px 20px;
+            border-bottom: 1px solid #e9ecef;
+            align-items: center;
+        }
+        .instance-item:last-child {
+            border-bottom: none;
+        }
+        .instance-name {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        .instance-engine {
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 500;
+            text-align: center;
+        }
+        .status-available {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status-stopped {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .refresh-btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1em;
+            margin-bottom: 20px;
+        }
+        .refresh-btn:hover {
+            background: #0056b3;
+        }
+        .metadata {
+            background: #e7f3ff;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-size: 0.9em;
+            color: #0c5460;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 RDS Operations Dashboard</h1>
+            <p>Real-time Multi-Account RDS Instance Discovery</p>
+        </div>
+        
+        <div class="content">
+            <button class="refresh-btn" onclick="loadData()">🔄 Refresh Data</button>
+            
+            <div id="loading" class="loading">
+                <h3>🔍 Loading RDS instances...</h3>
+                <p>Fetching real-time data from AWS accounts</p>
+            </div>
+            
+            <div id="error" class="error" style="display: none;">
+                <h4>❌ Error Loading Data</h4>
+                <p id="error-message"></p>
+            </div>
+            
+            <div id="content" style="display: none;">
+                <div id="metadata" class="metadata"></div>
+                
+                <div class="status-grid">
+                    <div class="status-card">
+                        <h3>📊 Total Instances</h3>
+                        <p id="total-instances">-</p>
+                    </div>
+                    <div class="status-card">
+                        <h3>🏢 Accounts Scanned</h3>
+                        <p id="accounts-scanned">-</p>
+                    </div>
+                    <div class="status-card">
+                        <h3>⚡ Cache Status</h3>
+                        <p id="cache-status">-</p>
+                    </div>
+                    <div class="status-card">
+                        <h3>🕒 Last Updated</h3>
+                        <p id="last-updated">-</p>
+                    </div>
+                </div>
+                
+                <div class="instances-section">
+                    <h2>🗄️ RDS Instances by Account</h2>
+                    <div id="instances-container"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'https://08mqqv008c.execute-api.ap-southeast-1.amazonaws.com/prod/api/instances';
+        
+        async function loadData() {
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const content = document.getElementById('content');
+            
+            loading.style.display = 'block';
+            error.style.display = 'none';
+            content.style.display = 'none';
+            
+            try {
+                console.log('Fetching data from:', API_URL);
+                const response = await fetch(API_URL, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                console.log('Received data:', data);
+                
+                displayData(data);
+                
+            } catch (err) {
+                console.error('Error loading data:', err);
+                document.getElementById('error-message').textContent = err.message;
+                error.style.display = 'block';
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+        
+        function displayData(data) {
+            const content = document.getElementById('content');
+            
+            // Update metadata
+            const metadata = document.getElementById('metadata');
+            metadata.innerHTML = `
+                <strong>🔍 Discovery Status:</strong> 
+                Real-time data from ${data.metadata?.accounts_scanned || 0} account(s) • 
+                Cache: ${data.metadata?.cache_status || 'unknown'} • 
+                Updated: ${new Date(data.metadata?.last_updated || Date.now()).toLocaleString()}
+            `;
+            
+            // Update status cards
+            document.getElementById('total-instances').textContent = data.instances?.length || 0;
+            document.getElementById('accounts-scanned').textContent = data.metadata?.accounts_scanned || 0;
+            document.getElementById('cache-status').textContent = data.metadata?.cache_status || 'unknown';
+            document.getElementById('last-updated').textContent = 
+                new Date(data.metadata?.last_updated || Date.now()).toLocaleString();
+            
+            // Group instances by account
+            const instancesByAccount = {};
+            (data.instances || []).forEach(instance => {
+                const accountId = instance.account_id || 'unknown';
+                if (!instancesByAccount[accountId]) {
+                    instancesByAccount[accountId] = [];
+                }
+                instancesByAccount[accountId].push(instance);
+            });
+            
+            // Display instances
+            const container = document.getElementById('instances-container');
+            container.innerHTML = '';
+            
+            if (Object.keys(instancesByAccount).length === 0) {
+                container.innerHTML = `
+                    <div class="account-group">
+                        <div class="account-header">
+                            <h3>ℹ️ No RDS instances found</h3>
+                        </div>
+                        <div style="padding: 20px; text-align: center; color: #6c757d;">
+                            <p>The discovery service is working but no RDS instances were found in the accessible accounts.</p>
+                            <p>This could mean:</p>
+                            <ul style="text-align: left; display: inline-block;">
+                                <li>No RDS instances exist in the scanned regions</li>
+                                <li>Cross-account roles need to be configured</li>
+                                <li>Instances exist in regions not being scanned</li>
+                            </ul>
+                        </div>
+                    </div>
+                `;
+                content.style.display = 'block';
+                return;
+            }
+            
+            Object.entries(instancesByAccount).forEach(([accountId, instances]) => {
+                const accountDiv = document.createElement('div');
+                accountDiv.className = 'account-group';
+                
+                const isHubAccount = accountId === '876595225096';
+                const accountName = isHubAccount ? 'Hub Account' : 'Third Account';
+                const accountIcon = isHubAccount ? '🏠' : '🏢';
+                
+                accountDiv.innerHTML = `
+                    <div class="account-header">
+                        <h3>${accountIcon} ${accountName} (${accountId})</h3>
+                        <small>${instances.length} instance(s) found</small>
+                    </div>
+                    <div class="instance-list">
+                        ${instances.map(instance => `
+                            <div class="instance-item">
+                                <div>
+                                    <div class="instance-name">${instance.instance_id || 'Unknown'}</div>
+                                    <div class="instance-engine">${instance.engine || 'Unknown'} ${instance.engine_version || ''}</div>
+                                </div>
+                                <div>${instance.region || 'Unknown'}</div>
+                                <div class="status-badge status-${getStatusClass(instance.status)}">
+                                    ${instance.status || 'Unknown'}
+                                </div>
+                                <div>${instance.instance_class || 'Unknown'}</div>
+                                <div>${instance.allocated_storage || '?'}GB</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                
+                container.appendChild(accountDiv);
+            });
+            
+            content.style.display = 'block';
+        }
+        
+        function getStatusClass(status) {
+            switch (status?.toLowerCase()) {
+                case 'available': return 'available';
+                case 'stopped': return 'stopped';
+                default: return 'error';
+            }
+        }
+        
+        // Load data on page load
+        loadData();
+        
+        // Auto-refresh every 5 minutes
+        setInterval(loadData, 5 * 60 * 1000);
+    </script>
+</body>
+</html>

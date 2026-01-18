@@ -1,0 +1,17 @@
+﻿{
+    "Version":  "2012-10-17",
+    "Statement":  [
+                      {
+                          "Effect":  "Allow",
+                          "Resource":  "*",
+                          "Action":  [
+                                         "cognito-idp:ListUsers",
+                                         "cognito-idp:AdminGetUser",
+                                         "cognito-idp:AdminListGroupsForUser",
+                                         "cognito-idp:AdminCreateUser",
+                                         "cognito-idp:AdminDeleteUser",
+                                         "cognito-idp:AdminUpdateUserAttributes"
+                                     ]
+                      }
+                  ]
+}

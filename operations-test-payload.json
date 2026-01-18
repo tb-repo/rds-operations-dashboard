@@ -1,0 +1,9 @@
+﻿{
+  "body": "{\"operation\":\"create_snapshot\",\"instance_id\":\"tb-pg-db1\",\"parameters\":{\"snapshot_id\":\"test-snapshot-20260105\"}}",
+  "requestContext": {
+    "identity": {
+      "userArn": "arn:aws:iam::876595225096:user/test-user",
+      "sourceIp": "127.0.0.1"
+    }
+  }
+}

@@ -1,22 +1,23 @@
 """
 RDS Discovery Service Lambda Handler
 
-Purpose: Discover RDS instances across multiple AWS accounts and regions.
-Assumes cross-account roles, queries RDS API, and extracts instance metadata.
+Purpose: Discover RDS instances across multiple AWS accounts and regions with universal environment support.
+Assumes cross-account roles, queries RDS API, and extracts instance metadata with automatic environment classification.
 
 Design Decisions:
 - Parallel discovery across regions for performance
 - Graceful failure handling (continue on per-account/region errors)
 - Comprehensive metadata extraction for dashboard needs
-- Tag-based environment classification
+- Universal environment classification based on tags, naming patterns, and account mappings
+- No environment-specific configuration required
 
 Governance Metadata:
 {
   "generated_by": "claude-3.5-sonnet",
-  "timestamp": "2025-12-02T00:00:00Z",
-  "version": "1.0.0",
-  "policy_version": "v1.0.0",
-  "traceability": "REQ-1.1, REQ-1.2, REQ-9.1 → DESIGN-001 → TASK-2",
+  "timestamp": "2025-01-17T00:00:00Z",
+  "version": "1.1.0",
+  "policy_version": "v1.1.0",
+  "traceability": "REQ-1.1, REQ-1.2, REQ-3.1, REQ-3.3, REQ-9.1 → DESIGN-001 → TASK-6.1",
   "review_status": "Pending",
   "risk_level": "Level 2",
   "reviewed_by": null,
@@ -276,23 +277,54 @@ def discover_all_instances(config: Any) -> Dict[str, Any]:
         
         # Check if cross-account discovery is configured (wrapped for resilience)
         try:
-            if hasattr(config, 'cross_account') and config.cross_account.target_accounts:
+            # Get target accounts from environment variable
+            target_accounts_str = os.environ.get('TARGET_ACCOUNTS')
+            if target_accounts_str:
+                try:
+                    target_accounts_list = json.loads(target_accounts_str)
+                    # Filter out current account and add additional accounts
+                    additional_accounts = [acc for acc in target_accounts_list if acc != current_account]
+                    if additional_accounts:
+                        cross_account_enabled = True
+                        target_accounts.extend(additional_accounts)
+                        logger.info('Cross-account discovery enabled from environment',
+                                   additional_accounts=len(additional_accounts),
+                                   target_accounts=target_accounts_list)
+                except json.JSONDecodeError as json_error:
+                    warnings.append({
+                        'type': 'target_accounts_parse_error',
+                        'severity': 'medium',
+                        'message': 'TARGET_ACCOUNTS environment variable is not valid JSON',
+                        'details': str(json_error),
+                        'remediation': 'Set TARGET_ACCOUNTS as valid JSON array, e.g., ["876595225096","817214535871"]',
+                        'impact': 'Cross-account discovery disabled'
+                    })
+                    logger.warn('TARGET_ACCOUNTS parse error, using current account only',
+                               target_accounts_str=target_accounts_str,
+                               error=str(json_error))
+            
+            # Fallback to config object if environment variable not set
+            elif hasattr(config, 'cross_account') and hasattr(config.cross_account, 'target_accounts'):
                 additional_accounts = [acc for acc in config.cross_account.target_accounts if acc != current_account]
                 if additional_accounts:
                     cross_account_enabled = True
                     target_accounts.extend(additional_accounts)
-                    logger.info('Cross-account discovery enabled',
+                    logger.info('Cross-account discovery enabled from config',
                                additional_accounts=len(additional_accounts))
+            else:
+                logger.info('Cross-account discovery not configured, using current account only')
+                
         except Exception as e:
             warnings.append({
                 'type': 'cross_account_config',
                 'severity': 'low',
-                'message': 'Cross-account discovery not configured',
+                'message': 'Cross-account discovery configuration error',
                 'details': str(e),
-                'remediation': 'To enable cross-account discovery, configure TARGET_ACCOUNTS environment variable',
+                'remediation': 'To enable cross-account discovery, configure TARGET_ACCOUNTS environment variable as JSON array',
                 'impact': 'Discovery limited to current account only'
             })
-            logger.info('Cross-account discovery not configured, using current account only')
+            logger.info('Cross-account discovery configuration error, using current account only',
+                       error=str(e))
         
         # Get enabled regions intelligently (wrapped for resilience)
         try:
@@ -462,74 +494,201 @@ def get_enabled_regions() -> List[str]:
 
 def validate_cross_account_access(account_id: str, config: Any) -> Dict[str, Any]:
     """
-    Validate that cross-account role exists and is accessible.
+    Enhanced cross-account role validation with detailed error reporting.
     
     Args:
         account_id: Target AWS account ID
         config: Application configuration
     
     Returns:
-        dict: Validation result with accessibility status and remediation steps
+        dict: Validation result with accessibility status and detailed remediation steps
     """
     try:
-        # Check if cross-account configuration exists
-        if not hasattr(config, 'cross_account'):
+        # Get configuration from environment variables if config object doesn't have cross_account
+        role_name = os.environ.get('CROSS_ACCOUNT_ROLE_NAME', 'RDSDashboardCrossAccountRole')
+        external_id = os.environ.get('EXTERNAL_ID', 'rds-dashboard-unique-external-id')
+        current_account = os.environ.get('AWS_ACCOUNT_ID')
+        
+        # Try to get current account if not set
+        if not current_account:
+            try:
+                import boto3
+                sts = boto3.client('sts')
+                current_account = sts.get_caller_identity()['Account']
+            except Exception as identity_error:
+                logger.error('Cannot determine current account', error=str(identity_error))
+                return {
+                    'accessible': False,
+                    'error': f'Cannot determine current account: {str(identity_error)}',
+                    'remediation': 'Check Lambda execution role has sts:GetCallerIdentity permission'
+                }
+        
+        # Check if we have required configuration
+        if not role_name or not external_id:
             return {
                 'accessible': False,
-                'error': 'Cross-account configuration not found',
-                'remediation': 'Configure EXTERNAL_ID and CROSS_ACCOUNT_ROLE_NAME environment variables'
+                'error': 'Cross-account configuration incomplete',
+                'remediation': '''
+                Configure required environment variables:
+                - CROSS_ACCOUNT_ROLE_NAME (default: RDSDashboardCrossAccountRole)
+                - EXTERNAL_ID (default: rds-dashboard-unique-external-id)
+                '''.strip()
             }
         
-        role_name = config.cross_account.role_name
-        external_id = config.cross_account.external_id
         role_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
+        
+        logger.info('Validating cross-account access',
+                   account_id=account_id,
+                   role_arn=role_arn,
+                   external_id=external_id[:8] + '...')  # Log partial external ID for security
         
         # Try to assume the role
         sts = AWSClients.get_sts_client()
-        sts.assume_role(
+        response = sts.assume_role(
             RoleArn=role_arn,
             RoleSessionName='rds-dashboard-validation',
             ExternalId=external_id,
             DurationSeconds=900
         )
         
+        # Test RDS access with assumed role
+        credentials = response['Credentials']
+        rds_client = AWSClients.get_rds_client(
+            region='ap-southeast-1',  # Use primary region for validation
+            aws_access_key_id=credentials['AccessKeyId'],
+            aws_secret_access_key=credentials['SecretAccessKey'],
+            aws_session_token=credentials['SessionToken']
+        )
+        
+        # Test basic RDS operation
+        try:
+            rds_client.describe_db_instances(MaxRecords=1)
+            logger.info('Cross-account RDS access validated successfully',
+                       account_id=account_id,
+                       role_arn=role_arn)
+        except Exception as rds_error:
+            logger.warn('Role assumption succeeded but RDS access failed',
+                       account_id=account_id,
+                       rds_error=str(rds_error))
+            return {
+                'accessible': False,
+                'error': f'Role assumption succeeded but RDS access failed: {str(rds_error)}',
+                'remediation': f'''
+                Cross-account role exists but lacks RDS permissions. To fix:
+                1. Go to IAM Console in account {account_id}
+                2. Find role '{role_name}'
+                3. Attach policy with these permissions:
+                   - rds:DescribeDBInstances
+                   - rds:DescribeDBClusters
+                   - rds:ListTagsForResource
+                   - rds:StartDBInstance
+                   - rds:StopDBInstance
+                   - rds:RebootDBInstance
+                   - rds:CreateDBSnapshot
+                '''.strip()
+            }
+        
         return {
             'accessible': True,
-            'role_arn': role_arn
+            'role_arn': role_arn,
+            'external_id': external_id,
+            'current_account': current_account
         }
         
     except Exception as e:
         error_str = str(e)
+        error_type = type(e).__name__
+        
+        logger.error('Cross-account validation failed',
+                    account_id=account_id,
+                    error_type=error_type,
+                    error_message=error_str)
         
         # Provide specific remediation based on error type
-        if 'AccessDenied' in error_str:
-            remediation = f"""
-            Cross-account role not accessible. To fix:
-            1. Create IAM role '{role_name}' in account {account_id}
-            2. Add trust policy allowing account {os.environ.get('AWS_ACCOUNT_ID', 'current')} to assume it
-            3. Include ExternalId '{external_id}' in trust policy
-            4. Attach policy with rds:Describe* permissions
+        if 'AccessDenied' in error_str or 'is not authorized to perform: sts:AssumeRole' in error_str:
+            remediation = f'''
+            Cross-account role access denied. To fix:
             
-            Example trust policy:
+            1. Create IAM role '{role_name}' in account {account_id} if it doesn't exist
+            2. Update trust policy to allow account {current_account} to assume it:
+            
             {{
               "Version": "2012-10-17",
               "Statement": [{{
                 "Effect": "Allow",
-                "Principal": {{"AWS": "arn:aws:iam::{os.environ.get('AWS_ACCOUNT_ID', 'CURRENT_ACCOUNT')}:root"}},
+                "Principal": {{"AWS": "arn:aws:iam::{current_account}:root"}},
                 "Action": "sts:AssumeRole",
                 "Condition": {{"StringEquals": {{"sts:ExternalId": "{external_id}"}}}}
               }}]
             }}
-            """
-        elif 'does not exist' in error_str:
-            remediation = f"IAM role '{role_name}' does not exist in account {account_id}. Create the role first."
+            
+            3. Attach RDS permissions policy:
+            {{
+              "Version": "2012-10-17",
+              "Statement": [{{
+                "Effect": "Allow",
+                "Action": [
+                  "rds:Describe*",
+                  "rds:List*",
+                  "rds:StartDBInstance",
+                  "rds:StopDBInstance",
+                  "rds:RebootDBInstance",
+                  "rds:CreateDBSnapshot"
+                ],
+                "Resource": "*"
+              }}]
+            }}
+            
+            4. Deploy using CloudFormation template: infrastructure/cross-account-role.yaml
+            '''
+        elif 'does not exist' in error_str or 'NoSuchEntity' in error_str:
+            remediation = f'''
+            IAM role '{role_name}' does not exist in account {account_id}. To create:
+            
+            1. Deploy CloudFormation template:
+               aws cloudformation deploy \\
+                 --template-file infrastructure/cross-account-role.yaml \\
+                 --stack-name rds-dashboard-cross-account-role \\
+                 --parameter-overrides ManagementAccountId={current_account} ExternalId={external_id} \\
+                 --capabilities CAPABILITY_NAMED_IAM \\
+                 --region ap-southeast-1
+            
+            2. Or create manually in IAM Console with trust policy and RDS permissions
+            '''
+        elif 'InvalidClientTokenId' in error_str or 'SignatureDoesNotMatch' in error_str:
+            remediation = '''
+            AWS credentials are invalid or expired. Check:
+            1. Lambda execution role exists and has proper permissions
+            2. STS service is accessible
+            3. No network connectivity issues
+            '''
+        elif 'ExternalId' in error_str:
+            remediation = f'''
+            External ID mismatch. Ensure:
+            1. Cross-account role trust policy includes: "sts:ExternalId": "{external_id}"
+            2. EXTERNAL_ID environment variable matches the role configuration
+            3. External ID is exactly: {external_id}
+            '''
         else:
-            remediation = f"Unable to access account {account_id}. Error: {error_str}"
+            remediation = f'''
+            Unexpected error occurred during cross-account validation.
+            Error type: {error_type}
+            Error details: {error_str}
+            
+            Check:
+            1. Network connectivity to account {account_id}
+            2. AWS service availability
+            3. CloudWatch logs for detailed error information
+            '''
         
         return {
             'accessible': False,
             'error': error_str,
-            'remediation': remediation.strip()
+            'error_type': error_type,
+            'remediation': remediation.strip(),
+            'role_arn': f"arn:aws:iam::{account_id}:role/{role_name}",
+            'external_id': external_id,
+            'current_account': current_account
         }
 
 

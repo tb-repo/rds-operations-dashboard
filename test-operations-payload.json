@@ -1,0 +1,8 @@
+﻿{
+    "path":  "/operations",
+    "body":  "{\r\n    \"user_id\":  \"test-user\",\r\n    \"operation\":  \"create_snapshot\",\r\n    \"requested_by\":  \"test-user@example.com\",\r\n    \"instance_id\":  \"test-instance\",\r\n    \"parameters\":  {\r\n                       \"snapshot_id\":  \"test-snapshot-20260107-174243\"\r\n                   }\r\n}",
+    "headers":  {
+                    "Content-Type":  "application/json"
+                },
+    "httpMethod":  "POST"
+}

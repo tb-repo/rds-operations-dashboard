@@ -42,7 +42,7 @@ cp .env.example .env
 
 3. Update `.env` with your API Gateway details:
 ```
-VITE_API_BASE_URL=https://your-api-gateway-url.execute-api.ap-southeast-1.amazonaws.com/prod
+VITE_API_BASE_URL=https://your-api-gateway-url.execute-api.ap-southeast-1.amazonaws.com
 VITE_API_KEY=your-api-key-here
 ```
 

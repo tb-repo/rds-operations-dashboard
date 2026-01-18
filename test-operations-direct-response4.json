@@ -1,0 +1,1 @@
+{"statusCode": 500, "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "X-Correlation-ID": "f8158b56-f784-405d-9e8b-b734bd6e9ec5"}, "body": "{\"error\": \"Internal error: StructuredLogger.info() takes 2 positional arguments but 3 were given\"}"}

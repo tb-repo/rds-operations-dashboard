@@ -1,0 +1,15 @@
+{
+  "Variables": {
+    "AUDIT_LOG_TABLE": "audit-log-prod",
+    "CROSS_ACCOUNT_ROLE_NAME": "RDSDashboardCrossAccountRole",
+    "EXTERNAL_ID": "rds-dashboard-unique-external-id",
+    "TARGET_ACCOUNTS": "[\"876595225096\",\"817214535871\"]",
+    "TARGET_REGIONS": "[\"ap-southeast-1\",\"eu-west-2\"]",
+    "AWS_ACCOUNT_ID": "876595225096",
+    "INVENTORY_TABLE": "rds-inventory-prod",
+    "METRICS_CACHE_TABLE": "metrics-cache-prod",
+    "DATA_BUCKET": "rds-dashboard-data-876595225096-prod",
+    "HEALTH_ALERTS_TABLE": "health-alerts-prod",
+    "SNS_TOPIC_ARN": "arn:aws:sns:ap-southeast-1:876595225096:rds-dashboard-notifications"
+  }
+}

@@ -267,8 +267,10 @@ export class CognitoService {
     // Clear session from memory
     this.session = null
 
-    // Redirect to Cognito logout
+    // Redirect to Cognito logout endpoint
+    // Using logout_uri parameter to redirect to custom sign-out page
     const logoutUrl = `https://${this.config.domain}/logout?client_id=${this.config.clientId}&logout_uri=${encodeURIComponent(this.config.logoutUri)}`
+    console.log('Logout URL:', logoutUrl)
     window.location.href = logoutUrl
   }
 

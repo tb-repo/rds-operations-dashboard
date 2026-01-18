@@ -1,0 +1,39 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "rds:AddTagsToResource",
+                "rds:RemoveTagsFromResource",
+                "rds:ListTagsForResource",
+                "rds:DescribeDBSnapshots",
+                "rds:CreateDBSnapshot",
+                "rds:DeleteDBSnapshot",
+                "rds:RebootDBInstance",
+                "rds:StartDBInstance",
+                "rds:StopDBInstance",
+                "rds:ModifyDBInstance",
+                "rds:DescribeDBInstances"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "cognito-idp:ListUsers",
+                "cognito-idp:AdminGetUser",
+                "cognito-idp:AdminListGroupsForUser",
+                "cognito-idp:AdminCreateUser",
+                "cognito-idp:AdminDeleteUser",
+                "cognito-idp:AdminUpdateUserAttributes",
+                "cognito-idp:AdminSetUserPassword",
+                "cognito-idp:AdminAddUserToGroup",
+                "cognito-idp:AdminRemoveUserFromGroup",
+                "cognito-idp:ListGroups",
+                "cognito-idp:GetGroup"
+            ],
+            "Resource": "*"
+        }
+    ]
+}

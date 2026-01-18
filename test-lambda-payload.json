@@ -1,0 +1,3 @@
+{
+  "body": "{\"instance_id\":\"tb-pg-db1\",\"operation\":\"create_snapshot\",\"parameters\":{\"snapshot_id\":\"test-direct-20260107\"},\"user_id\":\"test-user\",\"requested_by\":\"admin@example.com\",\"user_groups\":[\"Admin\"]}"
+}

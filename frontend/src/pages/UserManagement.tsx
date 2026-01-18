@@ -23,9 +23,26 @@ export default function UserManagement() {
   const { data: usersData, isLoading, error } = useQuery({
     queryKey: ['users'],
     queryFn: async () => {
-      const response = await apiClient.get<{ users: UserInfo[]; total: number }>('/api/users')
-      return response.data
+      try {
+        const response = await apiClient.get<{ users: UserInfo[]; total: number }>('/api/users')
+        console.log('Users API response:', response.data)
+        return response.data
+      } catch (error: any) {
+        console.error('Error fetching users:', error)
+        if (error.response?.status === 403) {
+          throw new Error('You do not have permission to manage users. Please contact your administrator to be added to the Admin group.')
+        }
+        if (error.response?.status === 500) {
+          throw new Error('User management service is unavailable. This may be due to missing IAM permissions for Cognito user pool access.')
+        }
+        if (error.response?.data?.message) {
+          throw new Error(error.response.data.message)
+        }
+        throw new Error(`Failed to load users: ${error.message}`)
+      }
     },
+    retry: 2, // Retry failed requests
+    retryDelay: 1000,
   })
 
   const addRoleMutation = useMutation({
@@ -61,7 +78,17 @@ export default function UserManagement() {
   }
 
   if (error) {
-    return <ErrorMessage message="Failed to load users" />
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
+          <p className="mt-1 text-sm text-gray-600">Manage user roles and permissions</p>
+        </div>
+        <ErrorMessage 
+          message={error instanceof Error ? error.message : "Failed to load users"} 
+        />
+      </div>
+    )
   }
 
   const users = usersData?.users || []
@@ -98,8 +125,34 @@ export default function UserManagement() {
 
       {/* Users Table */}
       <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+        {users.length === 0 ? (
+          <div className="text-center py-12">
+            <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No Users Found</h3>
+            <p className="text-gray-600 mb-4">
+              The user management system is not returning any users from the Cognito user pool.
+            </p>
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 max-w-md mx-auto">
+              <h4 className="text-sm font-medium text-yellow-800 mb-2">Possible Issues:</h4>
+              <ul className="text-sm text-yellow-700 space-y-1 text-left">
+                <li>• BFF Lambda lacks IAM permissions for Cognito Admin APIs</li>
+                <li>• User pool ID configuration is incorrect</li>
+                <li>• No users have been created in the Cognito user pool</li>
+                <li>• Network connectivity issues with AWS services</li>
+              </ul>
+            </div>
+            <div className="mt-6">
+              <button
+                onClick={() => window.location.reload()}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Retry Loading Users
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -188,6 +241,7 @@ export default function UserManagement() {
             </tbody>
           </table>
         </div>
+        )}
       </div>
 
       {/* Add Role Modal */}

@@ -1,0 +1,11 @@
+﻿{
+    "main":  "index.js",
+    "description":  "BFF for RDS Operations Dashboard with Operations Endpoint",
+    "name":  "rds-bff-with-operations",
+    "version":  "1.4.0",
+    "dependencies":  {
+                         "@aws-sdk/client-lambda":  "^3.0.0",
+                         "@aws-sdk/lib-dynamodb":  "^3.0.0",
+                         "@aws-sdk/client-dynamodb":  "^3.0.0"
+                     }
+}

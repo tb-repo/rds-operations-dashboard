@@ -60,8 +60,12 @@ export default function InstanceDetail() {
 
     const request: OperationRequest = {
       instance_id: instanceId!,
-      operation_type: selectedOperation as any,
+      operation: selectedOperation as any,
+      region: instance.region,
+      account_id: instance.account_id,
     }
+
+    console.log('Preparing operation request:', request)
 
     if (confirm(`Are you sure you want to execute ${selectedOperation}?`)) {
       operationMutation.mutate(request)

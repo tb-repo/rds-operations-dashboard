@@ -1,14 +1,12 @@
 /**
- * Lambda Handler for BFF using @vendia/serverless-express
+ * AWS Lambda Handler for BFF Express Application
  * 
- * This file wraps the Express application for AWS Lambda execution.
- * It uses serverless-express to handle the conversion between Lambda events
- * and Express HTTP requests/responses.
+ * This file wraps the Express app for Lambda execution using serverless-express.
+ * The Lambda function handler is exported as 'handler'.
  */
 
-import serverlessExpress from '@vendia/serverless-express';
-import app from './index';
+import serverlessExpress from '@vendia/serverless-express'
+import app from './index'
 
-// Create the serverless Express handler
-// This will handle all Lambda invocations and route them to the Express app
-export const handler = serverlessExpress({ app });
+// Create Lambda handler by wrapping Express app
+export const handler = serverlessExpress({ app })

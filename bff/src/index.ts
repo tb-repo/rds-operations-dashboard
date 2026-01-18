@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import dotenv from 'dotenv'
+import axios from 'axios'
 import { AuthMiddleware } from './middleware/auth'
 import { AuthorizationMiddleware } from './middleware/authorization'
 import { CognitoAdminService } from './services/cognito-admin'
@@ -11,7 +12,8 @@ import { logger } from './utils/logger'
 import { auditService } from './services/audit'
 import { initializeCorsConfig } from './config/cors'
 import { createOptionsHandler, addCorsHeaders, handleAllOptions } from './middleware/options-handler'
-import axios from 'axios'
+import { getServiceDiscovery } from './services/service-discovery'
+import { validateConfigurationOrExit } from './services/config-validator'
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager'
 
 // Helper function to create standard headers for internal API calls
@@ -23,6 +25,28 @@ const createInternalApiHeaders = (apiKey: string) => ({
 
 // Load environment variables
 dotenv.config()
+
+// Perform startup configuration validation
+async function performStartupValidation() {
+  logger.info('Performing startup configuration validation')
+  
+  try {
+    const validationResult = await validateConfigurationOrExit()
+    
+    if (validationResult.warnings.length > 0) {
+      logger.warn('Configuration validation completed with warnings', {
+        warnings: validationResult.warnings
+      })
+    } else {
+      logger.info('Configuration validation passed successfully')
+    }
+    
+    return validationResult
+  } catch (error: any) {
+    logger.error('Startup validation failed', { error: error.message })
+    throw error
+  }
+}
 
 // Function to load API key from Secrets Manager
 async function loadApiKeyFromSecretsManager(): Promise<string> {
@@ -57,7 +81,6 @@ async function loadApiKeyFromSecretsManager(): Promise<string> {
 const requiredEnvVars = [
   'COGNITO_USER_POOL_ID',
   'COGNITO_REGION',
-  'INTERNAL_API_URL',
 ]
 
 for (const envVar of requiredEnvVars) {
@@ -68,15 +91,32 @@ for (const envVar of requiredEnvVars) {
 }
 
 // Cache environment variables at startup
-const INTERNAL_API_URL = process.env.INTERNAL_API_URL!.replace(/\/$/, '')
 const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID!
 const COGNITO_REGION = process.env.COGNITO_REGION!
 const COGNITO_CLIENT_ID = process.env.COGNITO_CLIENT_ID
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000'
 const AUDIT_LOG_GROUP = process.env.AUDIT_LOG_GROUP
 
+// Initialize Service Discovery
+const serviceDiscovery = getServiceDiscovery()
+
 // Global variable for API key (loaded at startup)
 let INTERNAL_API_KEY = ''
+
+// Initialize API key on module load for Lambda
+async function initializeApiKey() {
+  if (!INTERNAL_API_KEY) {
+    INTERNAL_API_KEY = await loadApiKeyFromSecretsManager()
+    logger.info('API key initialized', { hasKey: !!INTERNAL_API_KEY })
+  }
+}
+
+// For Lambda: Initialize on cold start
+if (process.env.AWS_EXECUTION_ENV) {
+  initializeApiKey().catch(error => {
+    logger.error('Failed to initialize API key on Lambda cold start', { error: error.message })
+  })
+}
 
 // Create Express app
 const app = express()
@@ -180,7 +220,7 @@ const authMiddleware = new AuthMiddleware(
 )
 
 const authorizationMiddleware = new AuthorizationMiddleware(
-  INTERNAL_API_URL,
+  serviceDiscovery.getEndpoint('discovery'), // Use service discovery instead of hardcoded URL
   INTERNAL_API_KEY  // Will be empty initially, but updated before first request
 )
 
@@ -248,6 +288,46 @@ app.get('/security/cors-stats', (req, res) => {
   })
 })
 
+// Configuration validation endpoint (for debugging - no auth required)
+app.get('/config-validation', async (req, res) => {
+  try {
+    const { ConfigValidator } = await import('./services/config-validator')
+    const validator = new ConfigValidator()
+    const result = await validator.validateConfiguration()
+    const report = validator.generateConfigurationReport(result)
+    
+    res.json({
+      valid: result.valid,
+      errors: result.errors,
+      warnings: result.warnings,
+      details: result.details,
+      report: report,
+      timestamp: new Date().toISOString()
+    })
+  } catch (error: any) {
+    logger.error('Configuration validation endpoint error', { error: error.message })
+    res.status(500).json({
+      error: 'Configuration validation failed',
+      message: error.message,
+      timestamp: new Date().toISOString()
+    })
+  }
+})
+
+// Service Discovery health endpoint (for debugging - no auth required)
+app.get('/service-discovery', (req, res) => {
+  const stats = serviceDiscovery.getStatistics()
+  const allHealth = serviceDiscovery.getAllCachedHealth()
+  const endpoints = serviceDiscovery.getAllEndpoints()
+  
+  res.json({
+    statistics: stats,
+    endpoints: endpoints,
+    health: allHealth,
+    timestamp: new Date().toISOString()
+  })
+})
+
 // Health metrics endpoint for specific instances
 app.get(
   '/api/health/:instanceId',
@@ -255,13 +335,12 @@ app.get(
   authorizationMiddleware.authorize('view_metrics'),
   async (req: Request, res: Response) => {
     try {
-      const response = await axios.get(
-        `${INTERNAL_API_URL}/health/${req.params.instanceId}`,
-        {
-          headers: createInternalApiHeaders(INTERNAL_API_KEY),
-        }
+      const response = await serviceDiscovery.callService(
+        'monitoring',
+        `/health/${req.params.instanceId}`,
+        { apiKey: INTERNAL_API_KEY }
       )
-      res.json(response.data)
+      res.json(response)
     } catch (error) {
       logger.error('Error fetching health metrics', { error, instanceId: req.params.instanceId })
       res.status(500).json({ error: 'Failed to fetch health metrics' })
@@ -281,11 +360,15 @@ app.get(
   authorizationMiddleware.authorize('view_instances'),
   async (req: Request, res: Response) => {
     try {
-      const response = await axios.get(`${INTERNAL_API_URL}/instances`, {
-        headers: createInternalApiHeaders(INTERNAL_API_KEY),
-        params: req.query,
-      })
-      res.json(response.data)
+      const response = await serviceDiscovery.callService(
+        'discovery',
+        '',
+        {
+          apiKey: INTERNAL_API_KEY,
+          params: req.query
+        }
+      )
+      res.json(response)
     } catch (error) {
       logger.error('Error fetching instances', { error })
       res.status(500).json({ error: 'Failed to fetch instances' })
@@ -298,13 +381,12 @@ app.get(
   authorizationMiddleware.authorize('view_instances'),
   async (req: Request, res: Response) => {
     try {
-      const response = await axios.get(
-        `${INTERNAL_API_URL}/instances/${req.params.id}`,
-        {
-          headers: createInternalApiHeaders(INTERNAL_API_KEY),
-        }
+      const response = await serviceDiscovery.callService(
+        'discovery',
+        `/${req.params.id}`,
+        { apiKey: INTERNAL_API_KEY }
       )
-      res.json(response.data)
+      res.json(response)
     } catch (error) {
       logger.error('Error fetching instance', { error, instanceId: req.params.id })
       res.status(500).json({ error: 'Failed to fetch instance' })
@@ -320,11 +402,15 @@ app.get(
   authorizationMiddleware.authorize('view_metrics'),
   async (req: Request, res: Response) => {
     try {
-      const response = await axios.get(`${INTERNAL_API_URL}/metrics`, {
-        headers: createInternalApiHeaders(INTERNAL_API_KEY),
-        params: req.query,
-      })
-      res.json(response.data)
+      const response = await serviceDiscovery.callService(
+        'monitoring',
+        '/metrics',
+        {
+          apiKey: INTERNAL_API_KEY,
+          params: req.query
+        }
+      )
+      res.json(response)
     } catch (error) {
       logger.error('Error fetching metrics', { error })
       res.status(500).json({ error: 'Failed to fetch metrics' })
@@ -340,11 +426,15 @@ app.get(
   authorizationMiddleware.authorize('view_compliance'),
   async (req: Request, res: Response) => {
     try {
-      const response = await axios.get(`${INTERNAL_API_URL}/compliance`, {
-        headers: createInternalApiHeaders(INTERNAL_API_KEY),
-        params: req.query,
-      })
-      res.json(response.data)
+      const response = await serviceDiscovery.callService(
+        'compliance',
+        '',
+        {
+          apiKey: INTERNAL_API_KEY,
+          params: req.query
+        }
+      )
+      res.json(response)
     } catch (error) {
       logger.error('Error fetching compliance', { error })
       res.status(500).json({ error: 'Failed to fetch compliance data' })
@@ -360,11 +450,15 @@ app.get(
   authorizationMiddleware.authorize('view_costs'),
   async (req: Request, res: Response) => {
     try {
-      const response = await axios.get(`${INTERNAL_API_URL}/costs`, {
-        headers: createInternalApiHeaders(INTERNAL_API_KEY),
-        params: req.query,
-      })
-      res.json(response.data)
+      const response = await serviceDiscovery.callService(
+        'costs',
+        '',
+        {
+          apiKey: INTERNAL_API_KEY,
+          params: req.query
+        }
+      )
+      res.json(response)
     } catch (error) {
       logger.error('Error fetching costs', { error })
       res.status(500).json({ error: 'Failed to fetch cost data' })
@@ -380,27 +474,72 @@ app.post(
   authorizationMiddleware.authorize('execute_operations'),
   async (req: Request, res: Response) => {
     try {
-      const requestBody = {
-        ...req.body,
-        requested_by: req.user?.email,
-        user_id: req.user?.userId,
-        user_groups: req.user?.groups || [],
-        user_permissions: req.user?.permissions || [],
-      }
-
-      const response = await axios.post(
-        `${INTERNAL_API_URL}/operations`,
-        requestBody,
-        {
-          headers: createInternalApiHeaders(INTERNAL_API_KEY),
-        }
-      )
-      
-      logger.info('Operation executed', {
+      // Enhanced logging for debugging
+      logger.info('Operations request received', {
         userId: req.user?.userId,
         email: req.user?.email,
         operation: req.body.operation,
         instanceId: req.body.instance_id,
+        userGroups: req.user?.groups,
+        requestBody: req.body
+      })
+
+      // Validate required fields
+      if (!req.body.operation) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'Operation type is required'
+        })
+      }
+
+      if (!req.body.instance_id) {
+        return res.status(400).json({
+          error: 'Bad Request', 
+          message: 'Instance ID is required'
+        })
+      }
+
+      // Ensure user identity is properly passed and format request correctly
+      const requestBody = {
+        // Core operation fields (exactly as expected by Lambda)
+        operation: req.body.operation,
+        instance_id: req.body.instance_id,
+        region: req.body.region || 'ap-southeast-1',
+        account_id: req.body.account_id || '876595225096',
+        parameters: req.body.parameters || {},
+        
+        // User identity fields (for audit and authorization)
+        requested_by: req.user?.email || 'unknown',
+        user_id: req.user?.userId || 'unknown',
+        user_groups: req.user?.groups || [],
+        user_permissions: req.user?.permissions || [],
+        
+        // Debug fields
+        timestamp: new Date().toISOString(),
+        bff_version: '1.0.0'
+      }
+
+      logger.info('Forwarding to operations service', {
+        service: 'operations',
+        requestBody: requestBody,
+        hasApiKey: !!INTERNAL_API_KEY
+      })
+
+      const response = await serviceDiscovery.callService(
+        'operations',
+        '',
+        {
+          method: 'POST',
+          data: requestBody,
+          apiKey: INTERNAL_API_KEY
+        }
+      )
+      
+      logger.info('Operation executed successfully', {
+        userId: req.user?.userId,
+        email: req.user?.email,
+        operation: req.body.operation,
+        instanceId: req.body.instance_id
       })
 
       auditService.logOperationEvent(
@@ -420,10 +559,48 @@ app.post(
         }
       )
 
-      res.json(response.data)
-    } catch (error) {
-      logger.error('Error executing operation', { error })
-      res.status(500).json({ error: 'Failed to execute operation' })
+      res.json(response)
+    } catch (error: any) {
+      logger.error('Error executing operation', { 
+        error: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        responseData: error.response?.data,
+        userId: req.user?.userId,
+        operation: req.body?.operation,
+        instanceId: req.body?.instance_id
+      })
+
+      // Audit failed operation
+      auditService.logOperationEvent(
+        'OPERATION_FAILED',
+        req.user?.userId || 'unknown',
+        req.user?.email || 'unknown',
+        req.ip || 'unknown',
+        req.get('user-agent') || 'unknown',
+        `instance:${req.body?.instance_id || 'unknown'}`,
+        req.body?.operation || 'unknown',
+        'failure',
+        error.message,
+        {
+          instanceId: req.body?.instance_id,
+          operation: req.body?.operation,
+          parameters: req.body?.parameters,
+          errorStatus: error.response?.status,
+          errorData: error.response?.data
+        }
+      )
+
+      // Return specific error from Lambda if available
+      if (error.response?.data) {
+        return res.status(error.response.status || 500).json(error.response.data)
+      }
+
+      res.status(500).json({ 
+        error: 'Failed to execute operation',
+        message: error.message,
+        details: 'Check server logs for more information'
+      })
     }
   }
 )
@@ -442,11 +619,13 @@ app.post(
         user_id: req.user?.userId,
       }
 
-      const response = await axios.post(
-        `${INTERNAL_API_URL}/cloudops`,
-        requestBody,
+      const response = await serviceDiscovery.callService(
+        'cloudops',
+        '',
         {
-          headers: createInternalApiHeaders(INTERNAL_API_KEY),
+          method: 'POST',
+          data: requestBody,
+          apiKey: INTERNAL_API_KEY
         }
       )
       
@@ -474,7 +653,7 @@ app.post(
         }
       )
 
-      res.json(response.data)
+      res.json(response)
     } catch (error) {
       logger.error('Error generating CloudOps request', { error })
       res.status(500).json({ error: 'Failed to generate CloudOps request' })
@@ -490,11 +669,13 @@ app.post(
   authorizationMiddleware.authorize('trigger_discovery'),
   async (req: Request, res: Response) => {
     try {
-      const response = await axios.post(
-        `${INTERNAL_API_URL}/discovery/trigger`,
-        req.body,
+      const response = await serviceDiscovery.callService(
+        'discovery',
+        '/trigger',
         {
-          headers: createInternalApiHeaders(INTERNAL_API_KEY),
+          method: 'POST',
+          data: req.body,
+          apiKey: INTERNAL_API_KEY
         }
       )
       
@@ -514,7 +695,7 @@ app.post(
         'success'
       )
 
-      res.json(response.data)
+      res.json(response)
     } catch (error) {
       logger.error('Error triggering discovery', { error })
       res.status(500).json({ error: 'Failed to trigger discovery' })
@@ -530,14 +711,13 @@ app.post(
   authorizationMiddleware.authorize('view_metrics'),
   async (req: Request, res: Response) => {
     try {
-      const response = await axios.post(
-        `${INTERNAL_API_URL}/monitoring`,
-        req.body,
+      const response = await serviceDiscovery.callService(
+        'monitoring',
+        '',
         {
-          headers: { 
-            ...createInternalApiHeaders(INTERNAL_API_KEY),
-            'Content-Type': 'application/json',
-          },
+          method: 'POST',
+          data: req.body,
+          apiKey: INTERNAL_API_KEY
         }
       )
       
@@ -548,7 +728,7 @@ app.post(
         instanceId: req.body.instance_id,
       })
 
-      res.json(response.data)
+      res.json(response)
     } catch (error: any) {
       logger.error('Error fetching monitoring data', { 
         error: error.message,
@@ -577,14 +757,13 @@ app.post(
         user_email: req.user?.email,
       }
 
-      const response = await axios.post(
-        `${INTERNAL_API_URL}/approvals`,
-        requestBody,
+      const response = await serviceDiscovery.callService(
+        'approvals',
+        '',
         {
-          headers: { 
-            ...createInternalApiHeaders(INTERNAL_API_KEY),
-            'Content-Type': 'application/json',
-          },
+          method: 'POST',
+          data: requestBody,
+          apiKey: INTERNAL_API_KEY
         }
       )
       
@@ -608,7 +787,7 @@ app.post(
           'success',
           undefined,
           {
-            requestId: response.data.request_id,
+            requestId: response.request_id,
             riskLevel: req.body.risk_level,
             environment: req.body.environment,
           }
@@ -639,7 +818,7 @@ app.post(
         )
       }
 
-      res.json(response.data)
+      res.json(response)
     } catch (error: any) {
       logger.error('Error in approval workflow', { 
         error: error.message,
@@ -656,17 +835,18 @@ app.get(
   authorizationMiddleware.authorize('execute_operations'),
   async (req: Request, res: Response) => {
     try {
-      const response = await axios.get(
-        `${INTERNAL_API_URL}/approvals`,
+      const response = await serviceDiscovery.callService(
+        'approvals',
+        '',
         {
-          headers: createInternalApiHeaders(INTERNAL_API_KEY),
+          apiKey: INTERNAL_API_KEY,
           params: {
             user_email: req.user?.email,
-          },
+          }
         }
       )
       
-      res.json(response.data)
+      res.json(response)
     } catch (error: any) {
       logger.error('Error fetching approvals', { error: error.message })
       res.status(500).json({ error: 'Failed to fetch approvals' })
@@ -678,7 +858,7 @@ app.get(
 // Error Resolution Endpoints
 // ========================================
 const errorResolutionRoutes = createErrorResolutionRoutes(
-  INTERNAL_API_URL,
+  serviceDiscovery,
   () => INTERNAL_API_KEY
 )
 
@@ -736,15 +916,39 @@ app.use((req: Request, res: Response) => {
   })
 })
 
-// Start server
-app.listen(port, () => {
-  logger.info(`BFF server started`, {
-    port,
-    environment: process.env.NODE_ENV || 'development',
-    cognitoUserPoolId: COGNITO_USER_POOL_ID,
-    cognitoRegion: COGNITO_REGION,
-    internalApiUrl: INTERNAL_API_URL,
-  })
-})
-
+// Export the app for Lambda or local server
 export default app
+
+// Only start server if not running in Lambda
+if (process.env.AWS_EXECUTION_ENV === undefined) {
+  // Perform startup validation before starting server
+  performStartupValidation()
+    .then(() => {
+      app.listen(port, () => {
+        logger.info(`BFF server started`, {
+          port,
+          environment: process.env.NODE_ENV || 'development',
+          cognitoUserPoolId: COGNITO_USER_POOL_ID,
+          cognitoRegion: COGNITO_REGION,
+          serviceDiscoveryEnabled: true,
+        })
+      })
+    })
+    .catch((error) => {
+      logger.error('Failed to start server due to configuration validation failure', {
+        error: error.message
+      })
+      process.exit(1)
+    })
+} else {
+  // For Lambda, perform validation on cold start but don't exit on failure
+  performStartupValidation()
+    .then(() => {
+      logger.info('Lambda cold start validation completed successfully')
+    })
+    .catch((error) => {
+      logger.error('Lambda cold start validation failed - continuing with degraded functionality', {
+        error: error.message
+      })
+    })
+}

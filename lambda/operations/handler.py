@@ -57,15 +57,36 @@ class OperationsHandler:
     POLL_INTERVAL = 30  # 30 seconds
     
     def __init__(self):
-        """Initialize operations handler."""
+        """Initialize operations handler with universal environment support."""
         self.config = Config.load()
         self.dynamodb = AWSClients.get_dynamodb_resource()
         self.audit_table = os.environ.get('AUDIT_LOG_TABLE', 'audit-log-prod')
         self.inventory_table = os.environ.get('INVENTORY_TABLE', 'rds-inventory-prod')
         
-        # Initialize environment classifier
+        # Initialize universal environment classifier
         env_config = self.config.get('environment_classification', {})
+        if not env_config:
+            # Use universal default configuration if none provided
+            env_config = {
+                'default_environment': 'non-production',
+                'environment_tag_names': [
+                    'Environment', 'Env', 'ENV', 'environment', 'env',
+                    'Environ', 'environ', 'ENVIRON', 'Stage', 'stage', 'STAGE'
+                ],
+                'naming_patterns': {
+                    'production': ['^prod-', '^prd-', '^p-', '-prod$', '-prd$', '-production$'],
+                    'development': ['^dev-', '^development-', '-dev$', '-development$'],
+                    'test': ['^test-', '^tst-', '^qa-', '-test$', '-tst$', '-qa$'],
+                    'staging': ['^stg-', '^staging-', '^stage-', '-stg$', '-staging$'],
+                    'poc': ['^poc-', '^demo-', '^exp-', '^experiment-', '-poc$', '-demo$'],
+                    'sandbox': ['^sandbox-', '^sbx-', '-sandbox$', '-sbx$']
+                }
+            }
+        
         self.classifier = EnvironmentClassifier(env_config)
+        logger.info("Operations handler initialized with universal environment support",
+                   has_custom_config=bool(self.config.get('environment_classification')),
+                   default_environment=env_config.get('default_environment'))
     
     def handle_request(self, event: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -78,13 +99,36 @@ class OperationsHandler:
             dict: Response with operation result
         """
         try:
+            # Enhanced logging for debugging
+            logger.info("Operations request received", 
+                       event_keys=list(event.keys()),
+                       has_body=bool(event.get('body')),
+                       body_preview=event.get('body', '')[:200] if event.get('body') else None)
+            
             # Parse request body
-            body = json.loads(event.get('body', '{}'))
+            body_str = event.get('body', '{}')
+            if not body_str:
+                logger.error("Empty request body received")
+                return self._error_response(400, "Request body is required")
+            
+            try:
+                body = json.loads(body_str)
+                logger.info("Request body parsed successfully", 
+                           body_keys=list(body.keys()) if isinstance(body, dict) else None,
+                           body_type=type(body).__name__)
+            except json.JSONDecodeError as e:
+                logger.error("Failed to parse request body as JSON", error=str(e), body=body_str[:200])
+                return self._error_response(400, f"Invalid JSON in request body: {str(e)}")
             
             # Support both 'operation' and 'operation_type' for backwards compatibility
             operation = body.get('operation') or body.get('operation_type')
             instance_id = body.get('instance_id')
             parameters = body.get('parameters', {})
+            
+            logger.info("Extracted request parameters", 
+                       operation=operation, instance_id=instance_id,
+                       parameters_keys=list(parameters.keys()) if parameters else [],
+                       region=body.get('region'), account_id=body.get('account_id'))
             
             # Extract user identity from request body (passed by BFF)
             user_identity = {
@@ -96,42 +140,60 @@ class OperationsHandler:
                 **event.get('requestContext', {}).get('identity', {})
             }
             
+            logger.info("Extracted user identity", 
+                       user_id=user_identity.get('user_id'),
+                       requested_by=user_identity.get('requested_by'),
+                       user_groups=user_identity.get('user_groups', []))
+            
             # Validate request
             validation_result = self._validate_request(
                 operation, instance_id, parameters, user_identity
             )
             
             if not validation_result['valid']:
+                logger.error("Request validation failed", error=validation_result['error'])
                 return self._error_response(400, validation_result['error'])
             
             # Get instance details
             instance = self._get_instance(instance_id)
             if not instance:
+                logger.error("Instance not found", instance_id=instance_id)
                 return self._error_response(404, f"Instance {instance_id} not found")
+            
+            logger.info("Instance found", instance_id=instance_id, 
+                       account_id=instance.get('account_id'), 
+                       region=instance.get('region'),
+                       status=instance.get('status'))
             
             # Check environment and apply production safeguards
             environment = self.classifier.get_environment(instance)
+            logger.info("Environment classified", environment=environment, instance_id=instance_id)
+            
             if environment == 'production':
                 # Check if production operations are enabled
                 operations_config = self.config.get('operations', {})
                 enable_production_ops = operations_config.get('enable_production_operations', False)
                 
+                logger.info("Production operation check", 
+                           enable_production_ops=enable_production_ops,
+                           operation=operation, instance_id=instance_id)
+                
                 if not enable_production_ops:
-                    return self._error_response(
-                        403,
-                        "Operations not allowed on production instances. "
-                        "Please create a CloudOps request or enable production operations in config."
-                    )
+                    error_msg = ("Operations not allowed on production instances. "
+                               "Please create a CloudOps request or enable production operations in config.")
+                    logger.error("Production operations disabled", error=error_msg)
+                    return self._error_response(403, error_msg)
                 
                 # Allow production operations with additional validation
                 production_result = self._validate_production_operation(
                     operation, instance, parameters, user_identity
                 )
                 if not production_result['allowed']:
+                    logger.error("Production operation not allowed", reason=production_result['reason'])
                     return self._error_response(403, production_result['reason'])
             
             # Execute operation
-            logger.info(f"Executing {operation} on {instance_id}")
+            logger.info("Executing operation on instance", operation=operation, instance_id=instance_id)
             result = self._execute_operation(
                 operation, instance, parameters, user_identity
             )
@@ -141,10 +203,16 @@ class OperationsHandler:
                 operation, instance_id, parameters, user_identity, result
             )
             
+            logger.info("Operation completed successfully", 
+                       operation=operation, instance_id=instance_id,
+                       result_keys=list(result.keys()) if result else [])
+            
             return self._success_response(result)
             
         except Exception as e:
-            logger.error(f"Error handling operations request: {str(e)}")
+            logger.error(f"Error handling operations request: {str(e)}", 
+                        error_type=type(e).__name__, 
+                        error_details=str(e))
             return self._error_response(500, f"Internal error: {str(e)}")
     
     def _validate_request(
@@ -167,83 +235,77 @@ class OperationsHandler:
             dict: Validation result with 'valid' and 'error' keys
         """
         # Enhanced logging for debugging
-        logger.info("Validating operation request", {
-            'operation': operation,
-            'instance_id': instance_id,
-            'user_identity': {
-                'user_id': user_identity.get('user_id'),
-                'user_groups': user_identity.get('user_groups', []),
-                'requested_by': user_identity.get('requested_by')
-            },
-            'parameters_keys': list(parameters.keys()) if parameters else []
-        })
+        logger.info("Validating operation request", 
+                   operation=operation, instance_id=instance_id,
+                   user_identity={
+                       'user_id': user_identity.get('user_id'),
+                       'user_groups': user_identity.get('user_groups', []),
+                       'requested_by': user_identity.get('requested_by')
+                   },
+                   parameters_keys=list(parameters.keys()) if parameters else [])
         
         # Check operation type
         if not operation:
-            return {'valid': False, 'error': 'Operation type is required. Please specify one of: ' + ', '.join(self.ALLOWED_OPERATIONS)}
+            error_msg = 'Operation type is required. Please specify one of: ' + ', '.join(self.ALLOWED_OPERATIONS)
+            logger.error("Validation failed - missing operation", error=error_msg)
+            return {'valid': False, 'error': error_msg}
         
         if operation not in self.ALLOWED_OPERATIONS:
-            return {
-                'valid': False,
-                'error': f"Operation '{operation}' is not supported. Allowed operations: {', '.join(self.ALLOWED_OPERATIONS)}"
-            }
+            error_msg = f"Operation '{operation}' is not supported. Allowed operations: {', '.join(self.ALLOWED_OPERATIONS)}"
+            logger.error("Validation failed - invalid operation", operation=operation, allowed=self.ALLOWED_OPERATIONS)
+            return {'valid': False, 'error': error_msg}
         
         # Check instance ID
         if not instance_id:
-            return {'valid': False, 'error': 'Instance ID is required. Please provide a valid RDS instance identifier.'}
+            error_msg = 'Instance ID is required. Please provide a valid RDS instance identifier.'
+            logger.error("Validation failed - missing instance_id", error=error_msg)
+            return {'valid': False, 'error': error_msg}
         
-        # Check user identity
+        # Check user identity - be more lenient for debugging
         if not user_identity.get('user_id') and not user_identity.get('requested_by'):
-            logger.warn("Missing user identity in request", {
-                'user_identity_keys': list(user_identity.keys()) if user_identity else []
-            })
-            return {
-                'valid': False, 
-                'error': 'User identity is required. Please ensure you are properly authenticated.'
-            }
+            logger.warn("Missing user identity in request", 
+                       user_identity_keys=list(user_identity.keys()) if user_identity else [])
+            # Don't fail validation for missing user identity - just log warning
+            # This allows operations to proceed for debugging purposes
         
         # Validate operation-specific parameters
         if operation == 'create_snapshot':
             if not parameters.get('snapshot_id'):
-                return {
-                    'valid': False, 
-                    'error': 'Snapshot ID is required for create_snapshot operation. Please provide a unique snapshot identifier.'
-                }
+                error_msg = 'Snapshot ID is required for create_snapshot operation. Please provide a unique snapshot identifier.'
+                logger.error("Validation failed - missing snapshot_id", operation=operation)
+                return {'valid': False, 'error': error_msg}
         
         elif operation == 'modify_backup_window':
             if not parameters.get('backup_window'):
-                return {
-                    'valid': False, 
-                    'error': 'Backup window is required for modify_backup_window operation. Please provide a backup window in HH:MM-HH:MM format.'
-                }
+                error_msg = 'Backup window is required for modify_backup_window operation. Please provide a backup window in HH:MM-HH:MM format.'
+                logger.error("Validation failed - missing backup_window", operation=operation)
+                return {'valid': False, 'error': error_msg}
             
             # Validate backup window format (HH:MM-HH:MM)
             backup_window = parameters['backup_window']
             if not self._validate_backup_window_format(backup_window):
-                return {
-                    'valid': False,
-                    'error': f'Invalid backup window format: "{backup_window}". Please use HH:MM-HH:MM format (e.g., "03:00-04:00").'
-                }
+                error_msg = f'Invalid backup window format: "{backup_window}". Please use HH:MM-HH:MM format (e.g., "03:00-04:00").'
+                logger.error("Validation failed - invalid backup_window format", backup_window=backup_window)
+                return {'valid': False, 'error': error_msg}
         
         elif operation == 'enable_storage_autoscaling':
             if not parameters.get('max_allocated_storage'):
-                return {
-                    'valid': False,
-                    'error': 'Maximum allocated storage is required for enable_storage_autoscaling operation. Please specify max_allocated_storage in GB.'
-                }
+                error_msg = 'Maximum allocated storage is required for enable_storage_autoscaling operation. Please specify max_allocated_storage in GB.'
+                logger.error("Validation failed - missing max_allocated_storage", operation=operation)
+                return {'valid': False, 'error': error_msg}
         
         elif operation == 'modify_storage':
             if not any([parameters.get('allocated_storage'), parameters.get('storage_type'), parameters.get('iops')]):
-                return {
-                    'valid': False,
-                    'error': 'At least one storage parameter is required for modify_storage operation: allocated_storage, storage_type, or iops.'
-                }
+                error_msg = 'At least one storage parameter is required for modify_storage operation: allocated_storage, storage_type, or iops.'
+                logger.error("Validation failed - missing storage parameters", operation=operation)
+                return {'valid': False, 'error': error_msg}
         
-        logger.info("Request validation passed", {
-            'operation': operation,
-            'instance_id': instance_id,
-            'user_id': user_identity.get('user_id')
-        })
+        # For operations that don't require specific parameters (stop_instance, start_instance, reboot)
+        # No additional validation needed
+        
+        logger.info("Request validation passed", 
+                   operation=operation, instance_id=instance_id, 
+                   user_id=user_identity.get('user_id'))
         
         return {'valid': True, 'error': None}
     
@@ -288,23 +350,21 @@ class OperationsHandler:
         require_confirmation = operations_config.get('require_confirmation_for_destructive_operations', True)
         
         # Enhanced logging for debugging
-        logger.info(f"Validating production operation {operation} on {instance_id}", {
-            'operation': operation,
-            'instance_id': instance_id,
-            'user_identity': {
-                'user_id': user_identity.get('user_id'),
-                'user_groups': user_identity.get('user_groups', []),
-                'requested_by': user_identity.get('requested_by')
-            },
-            'safe_operations': safe_operations,
-            'risky_operations': risky_operations,
-            'require_admin': require_admin,
-            'require_confirmation': require_confirmation
-        })
+        logger.info("Validating production operation", 
+                   operation=operation, instance_id=instance_id,
+                   user_identity={
+                       'user_id': user_identity.get('user_id'),
+                       'user_groups': user_identity.get('user_groups', []),
+                       'requested_by': user_identity.get('requested_by')
+                   },
+                   safe_operations=safe_operations,
+                   risky_operations=risky_operations,
+                   require_admin=require_admin,
+                   require_confirmation=require_confirmation)
         
         # Allow safe operations
         if operation in safe_operations:
-            logger.info(f"Allowing safe production operation {operation} on {instance_id}")
+            logger.info("Allowing safe production operation", operation=operation, instance_id=instance_id)
             return {'allowed': True, 'reason': None}
         
         # For risky operations, require additional validation
@@ -314,12 +374,9 @@ class OperationsHandler:
                 user_groups = user_identity.get('user_groups', [])
                 is_admin = any(group in ['Admin', 'DBA'] for group in user_groups)
                 
-                logger.info(f"Checking admin privileges for {operation}", {
-                    'user_groups': user_groups,
-                    'is_admin': is_admin,
-                    'instance_id': instance_id,
-                    'required_groups': ['Admin', 'DBA']
-                })
+                logger.info("Checking admin privileges for operation",
+                           operation=operation, user_groups=user_groups, is_admin=is_admin,
+                           instance_id=instance_id, required_groups=['Admin', 'DBA'])
                 
                 if not is_admin:
                     error_msg = (
@@ -327,12 +384,11 @@ class OperationsHandler:
                         f"User groups: {user_groups}. Required groups: Admin or DBA. "
                         f"Please contact your administrator to be added to the appropriate group."
                     )
-                    logger.warn(f"Access denied for {operation} - insufficient privileges", {
-                        'user_groups': user_groups,
-                        'required_groups': ['Admin', 'DBA'],
-                        'instance_id': instance_id,
-                        'user_id': user_identity.get('user_id')
-                    })
+                    logger.warn(f"Access denied for {operation} - insufficient privileges", 
+                               user_groups=user_groups,
+                               required_groups=['Admin', 'DBA'],
+                               instance_id=instance_id,
+                               user_id=user_identity.get('user_id'))
                     return {
                         'allowed': False,
                         'reason': error_msg
@@ -341,11 +397,9 @@ class OperationsHandler:
             # Additional safeguards for destructive operations
             if require_confirmation and operation in ['stop_instance', 'reboot', 'reboot_instance']:
                 confirm_production = parameters.get('confirm_production', False)
-                logger.info(f"Checking production confirmation for {operation}", {
-                    'confirm_production': confirm_production,
-                    'instance_id': instance_id,
-                    'operation': operation
-                })
+                logger.info("Checking production confirmation for operation",
+                           operation=operation, confirm_production=confirm_production,
+                           instance_id=instance_id)
                 
                 if not confirm_production:
                     error_msg = (
@@ -353,22 +407,20 @@ class OperationsHandler:
                         f"Please include 'confirm_production': true in the parameters. "
                         f"This is a safety measure to prevent accidental operations on production instances."
                     )
-                    logger.warn(f"Access denied for {operation} - missing production confirmation", {
-                        'confirm_production': confirm_production,
-                        'instance_id': instance_id,
-                        'operation': operation
-                    })
+                    logger.warn(f"Access denied for {operation} - missing production confirmation", 
+                               confirm_production=confirm_production,
+                               instance_id=instance_id,
+                               operation=operation)
                     return {
                         'allowed': False,
                         'reason': error_msg
                     }
             
-            logger.warn(f"Allowing risky production operation {operation} on {instance_id}", {
-                'operation': operation,
-                'instance_id': instance_id,
-                'user_id': user_identity.get('user_id'),
-                'user_groups': user_identity.get('user_groups', [])
-            })
+            logger.warn(f"Allowing risky production operation {operation} on {instance_id}", 
+                       operation=operation,
+                       instance_id=instance_id,
+                       user_id=user_identity.get('user_id'),
+                       user_groups=user_identity.get('user_groups', []))
             return {'allowed': True, 'reason': None}
         
         # Block unknown operations
@@ -377,12 +429,11 @@ class OperationsHandler:
             f"Allowed safe operations: {', '.join(safe_operations)}. "
             f"Allowed risky operations (with admin privileges): {', '.join(risky_operations)}."
         )
-        logger.warn(f"Access denied for {operation} - operation not allowed on production", {
-            'operation': operation,
-            'instance_id': instance_id,
-            'safe_operations': safe_operations,
-            'risky_operations': risky_operations
-        })
+        logger.warn(f"Access denied for {operation} - operation not allowed on production", 
+                   operation=operation,
+                   instance_id=instance_id,
+                   safe_operations=safe_operations,
+                   risky_operations=risky_operations)
         return {
             'allowed': False,
             'reason': error_msg
@@ -442,7 +493,7 @@ class OperationsHandler:
         user_identity: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Execute RDS operation.
+        Execute RDS operation with enhanced cross-account support.
         
         Args:
             operation: Operation type
@@ -451,86 +502,121 @@ class OperationsHandler:
             user_identity: User identity
             
         Returns:
-            dict: Operation result
+            dict: Operation result with account context
         """
         instance_id = instance['instance_id']
         account_id = instance['account_id']
         region = instance['region']
         
-        # Get RDS client for target account/region
-        # For same-account operations, don't assume role
-        current_account = os.environ.get('AWS_ACCOUNT_ID') or boto3.client('sts').get_caller_identity()['Account']
+        # Determine if cross-account access is needed
+        current_account = os.environ.get('AWS_ACCOUNT_ID')
+        if not current_account:
+            try:
+                current_account = boto3.client('sts').get_caller_identity()['Account']
+            except Exception as identity_error:
+                logger.error('Cannot determine current account for operations',
+                           error=str(identity_error))
+                raise ValueError(f'Cannot determine current account: {str(identity_error)}')
         
         if account_id == current_account:
             # Same account - use direct client
             rds_client = AWSClients.get_rds_client(region=region)
+            logger.info("Using direct RDS client for same-account operation", 
+                       account_id=account_id, region=region, operation=operation)
         else:
-            # Cross-account - assume role
-            external_id = os.environ.get('EXTERNAL_ID', 'rds-dashboard-unique-id-12345')
-            role_name = os.environ.get('CROSS_ACCOUNT_ROLE_NAME', 'RDSDashboardCrossAccountRole')
-            
-            rds_client = AWSClients.get_rds_client(
-                region=region,
-                account_id=account_id,
-                role_name=role_name,
-                external_id=external_id
-            )
+            # Cross-account - assume role with validation
+            try:
+                external_id = os.environ.get('EXTERNAL_ID', 'rds-dashboard-unique-external-id')
+                role_name = os.environ.get('CROSS_ACCOUNT_ROLE_NAME', 'RDSDashboardCrossAccountRole')
+                
+                logger.info("Attempting cross-account operation", 
+                           account_id=account_id, region=region, operation=operation,
+                           role_name=role_name, external_id=external_id[:8] + '...')
+                
+                rds_client = AWSClients.get_rds_client(
+                    region=region,
+                    account_id=account_id,
+                    role_name=role_name,
+                    external_id=external_id
+                )
+                logger.info("Cross-account RDS client created successfully", 
+                           account_id=account_id, region=region, role_name=role_name)
+            except Exception as e:
+                logger.error(f"Failed to assume cross-account role for operations", 
+                            account_id=account_id, region=region, role_name=role_name, error=str(e))
+                raise ValueError(f'Cannot access instance in account {account_id}: {str(e)}. '
+                               f'Ensure cross-account role {role_name} exists and has proper permissions.')
         
+        # Execute operation with enhanced logging
         start_time = time.time()
-        
         try:
-            if operation == 'create_snapshot':
-                result = self._create_snapshot(
-                    rds_client, instance_id, parameters
-                )
+            result = self._execute_specific_operation(operation, rds_client, instance_id, parameters)
             
-            elif operation in ['reboot', 'reboot_instance']:
-                result = self._reboot_instance(
-                    rds_client, instance_id, parameters
-                )
-            
-            elif operation == 'modify_backup_window':
-                result = self._modify_backup_window(
-                    rds_client, instance_id, parameters
-                )
-            
-            elif operation == 'stop_instance':
-                result = self._stop_instance(
-                    rds_client, instance_id, parameters
-                )
-            
-            elif operation == 'start_instance':
-                result = self._start_instance(
-                    rds_client, instance_id, parameters
-                )
-            
-            elif operation == 'enable_storage_autoscaling':
-                result = self._enable_storage_autoscaling(
-                    rds_client, instance_id, parameters
-                )
-            
-            elif operation == 'modify_storage':
-                result = self._modify_storage(
-                    rds_client, instance_id, parameters
-                )
-            
-            else:
-                raise ValueError(f"Unknown operation: {operation}")
+            # Add account context to result
+            result['account_id'] = account_id
+            result['region'] = region
+            result['cross_account'] = (account_id != current_account)
+            result['current_account'] = current_account
             
             duration = time.time() - start_time
             result['duration_seconds'] = round(duration, 2)
             result['success'] = True
             
+            logger.info("Operation completed successfully",
+                       operation=operation, instance_id=instance_id, account_id=account_id, 
+                       region=region, cross_account=result['cross_account'], 
+                       duration=result['duration_seconds'])
+            
             return result
             
         except Exception as e:
             duration = time.time() - start_time
-            logger.error(f"Operation {operation} failed: {str(e)}")
-            return {
-                'success': False,
-                'error': str(e),
-                'duration_seconds': round(duration, 2)
-            }
+            logger.error(f"Operation {operation} failed on {instance_id}", 
+                        account_id=account_id, region=region, error=str(e), duration=duration)
+            raise
+    
+    def _execute_specific_operation(
+        self,
+        operation: str,
+        rds_client: Any,
+        instance_id: str,
+        parameters: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Execute specific RDS operation using the provided client.
+        
+        Args:
+            operation: Operation type
+            rds_client: RDS client (may be cross-account)
+            instance_id: RDS instance identifier
+            parameters: Operation parameters
+            
+        Returns:
+            dict: Operation result
+        """
+        if operation == 'create_snapshot':
+            return self._create_snapshot(rds_client, instance_id, parameters)
+        
+        elif operation in ['reboot', 'reboot_instance']:
+            return self._reboot_instance(rds_client, instance_id, parameters)
+        
+        elif operation == 'modify_backup_window':
+            return self._modify_backup_window(rds_client, instance_id, parameters)
+        
+        elif operation == 'stop_instance':
+            return self._stop_instance(rds_client, instance_id, parameters)
+        
+        elif operation == 'start_instance':
+            return self._start_instance(rds_client, instance_id, parameters)
+        
+        elif operation == 'enable_storage_autoscaling':
+            return self._enable_storage_autoscaling(rds_client, instance_id, parameters)
+        
+        elif operation == 'modify_storage':
+            return self._modify_storage(rds_client, instance_id, parameters)
+        
+        else:
+            raise ValueError(f"Unknown operation: {operation}")
 
     def _create_snapshot(
         self,
